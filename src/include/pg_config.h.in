@@ -833,3 +833,11 @@
 /* Define to empty if the keyword `volatile' does not work. Warning: valid
    code using `volatile' can become incorrect without. Disable with care. */
 #undef volatile
+
+#ifndef HAVE_UINTPTR_T
+#undef uintptr_t
+#endif
+
+#ifndef HAVE_INTPTR_T
+#undef intptr_t
+#endif

@@ -142,7 +142,7 @@
 #define att_align_nominal(cur_offset, attalign) \
 ( \
 	((attalign) == 'i') ? INTALIGN(cur_offset) : \
-	 (((attalign) == 'c') ? (long) (cur_offset) : \
+	 (((attalign) == 'c') ? (intptr_t) (cur_offset) : \
 	  (((attalign) == 'd') ? DOUBLEALIGN(cur_offset) : \
 	   ( \
 			AssertMacro((attalign) == 's'), \

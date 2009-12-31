@@ -305,9 +305,9 @@ typedef struct
  * or short may contain garbage when called as if it returned Datum.
  */
 
-typedef unsigned long Datum;	/* XXX sizeof(long) >= sizeof(void *) */
+typedef uintptr_t Datum;		/* XXX sizeof(long) >= sizeof(void *) */
 
-#define SIZEOF_DATUM SIZEOF_UNSIGNED_LONG
+#define SIZEOF_DATUM SIZEOF_VOID_P
 
 typedef Datum *DatumPtr;
 
