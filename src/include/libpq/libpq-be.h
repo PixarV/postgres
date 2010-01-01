@@ -103,7 +103,11 @@ typedef struct
 
 typedef struct Port
 {
+#ifndef WIN32
 	int			sock;			/* File descriptor */
+#else
+	SOCKET		sock;			/* Win32 requires SOCKET datatype */
+#endif
 	ProtocolVersion proto;		/* FE/BE protocol version */
 	SockAddr	laddr;			/* local addr (postmaster) */
 	SockAddr	raddr;			/* remote addr (client) */
