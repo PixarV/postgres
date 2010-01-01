@@ -494,6 +494,7 @@ sub WriteConfiguration
     }
     $libs =~ s/ $//;
     $libs =~ s/__CFGNAME__/$cfgname/g;
+    my $targetmachine = $self->platform eq 'Win32' ? 1 : 17;
     print $f <<EOF;
   <Configuration Name="$cfgname|$self->{platform}" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
 	ConfigurationType="$cfgtype" UseOfMFC="0" ATLMinimizesCRunTimeLibraryUsage="FALSE" CharacterSet="2" WholeProgramOptimization="$p->{wholeopt}">
@@ -514,7 +515,7 @@ EOF
 		StackReserveSize="4194304" DisableSpecificWarnings="$self->{disablewarnings}"
 		GenerateDebugInformation="TRUE" ProgramDatabaseFile=".\\$cfgname\\$self->{name}\\$self->{name}.pdb"
 		GenerateMapFile="FALSE" MapFileName=".\\$cfgname\\$self->{name}\\$self->{name}.map"
-		SubSystem="1" TargetMachine="1"
+		SubSystem="1" TargetMachine="$targetmachine"
 EOF
     if ($self->{disablelinkerwarnings})
     {
