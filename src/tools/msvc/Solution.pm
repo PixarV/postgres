@@ -82,7 +82,7 @@ sub DetermineToolVersions
 	while (<P>) {
 		if (/^\/favor:</) {
 			$self->{platform} = 'Win64';
-			break;
+			last;
 		}
 	}
 	close(P);
