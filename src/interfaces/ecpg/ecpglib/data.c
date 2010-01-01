@@ -162,12 +162,10 @@ ecpg_get_data(const PGresult *results, int act_tuple, int act_field, int lineno,
 		if (binary)
 		{
 			if (varcharsize == 0 || varcharsize * offset >= size)
-				memcpy((char *) (var + offset * act_tuple),
-					   pval, size);
+				memcpy(var + offset * act_tuple, pval, size);
 			else
 			{
-				memcpy((char *) (var + offset * act_tuple),
-					   pval, varcharsize * offset);
+				memcpy(var + offset * act_tuple, pval, varcharsize * offset);
 
 				if (varcharsize * offset < size)
 				{

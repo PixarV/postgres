@@ -585,11 +585,11 @@
    your system. */
 /* #undef PTHREAD_CREATE_JOINABLE */
 
-/* The size of a `size_t', as computed by sizeof. */
-#define SIZEOF_SIZE_T 4
+/* The size of `long', as computed by sizeof. */
+#define SIZEOF_LONG 4
 
-/* The size of a `unsigned long', as computed by sizeof. */
-#define SIZEOF_UNSIGNED_LONG 4
+/* The size of `size_t', as computed by sizeof. */
+#define SIZEOF_SIZE_T 4
 
 /* The size of `void *', as computed by sizeof. */
 #define SIZEOF_VOID_P 4
