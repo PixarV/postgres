@@ -12,9 +12,11 @@ use Mkvcbuild;
 chdir('..\..\..') if (-d '..\msvc' && -d '..\..\..\src');
 die 'Must run from root or msvc directory' unless (-d 'src\tools\msvc' && -d 'src');
 
-die 'Could not find config.pl' unless (-f 'src/tools/msvc/config.pl');
+die 'Could not find config.pl.default' unless (-f 'src/tools/msvc/config.pl.default');
+print "Warning: no config.pl found, using default.\n" unless (-f 'src/tools/msvc/config.pl');
 
 our $config;
-require 'src/tools/msvc/config.pl';
+require 'src/tools/msvc/config.pl.default';
+require 'src/tools/msvc/config.pl' if (-f 'src/tools/msvc/config.pl');
 
 Mkvcbuild::mkvcbuild($config);
