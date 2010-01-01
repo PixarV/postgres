@@ -333,7 +333,7 @@ sub DisableLinkerWarnings
 {
     my ($self, $warnings) = @_;
 
-    $self->{disablelinkerwarnings} .= ';' unless ($self->{disablelinkerwarnings} eq '');
+    $self->{disablelinkerwarnings} .= ',' unless ($self->{disablelinkerwarnings} eq '');
     $self->{disablelinkerwarnings} .= $warnings;
 }
 
