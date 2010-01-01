@@ -78,7 +78,7 @@ sub DetermineToolVersions
 # Determine if we are in 32 or 64-bit mode. Do this by seeing if CL has
 # 64-bit only parameters.
 	$self->{platform} = 'Win32';
-	open(P,"cl /? |") || die "cl command not found";
+	open(P,"cl /? 2>NUL|") || die "cl command not found";
 	while (<P>) {
 		if (/^\/favor:</) {
 			$self->{platform} = 'Win64';
