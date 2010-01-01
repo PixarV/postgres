@@ -21,6 +21,7 @@ sub new
         numver   => '',
         strver   => '',
         vcver    => undef,
+		platform => undef,
     };
     bless $self;
 	# integer_datetimes is now the default
@@ -73,6 +74,19 @@ sub DetermineToolVersions
     elsif ($1 == 9) { $self->{vcver} = '9.00' }
     else { die "Unsupported version of Visual Studio: $1" }
     print "Detected Visual Studio version $self->{vcver}\n";
+
+# Determine if we are in 32 or 64-bit mode. Do this by seeing if CL has
+# 64-bit only parameters.
+	$self->{platform} = 'Win32';
+	open(P,"cl /? |") || die "cl command not found";
+	while (<P>) {
+		if (/^\/favor:</) {
+			$self->{platform} = 'Win64';
+			break;
+		}
+	}
+	close(P);
+	print "Detected hardware platform: $self->{platform}\n";
 }
 
 
