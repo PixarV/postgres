@@ -346,6 +346,10 @@ sub Save
     if ($self->{type} eq "dll" && !$self->{def})
     {
         $self->FullExportDLL($self->{name} . ".lib");
+
+        # Warning 4197 is about double exporting, disable this per
+        # http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
+        $self->DisableLinkerWarnings('4197') if ($self->{platform} eq 'x64');
     }
 
     # Dump the project
@@ -496,10 +500,6 @@ sub WriteConfiguration
     $libs =~ s/__CFGNAME__/$cfgname/g;
 
     my $targetmachine = $self->{platform} eq 'Win32' ? 1 : 17;
-
-# Warning 4197 is about double exporting, disable this per
-# http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
-    $self->DisableLinkerWarnings('4197') if ($self->{platform} eq 'x64');
 
     print $f <<EOF;
   <Configuration Name="$cfgname|$self->{platform}" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
