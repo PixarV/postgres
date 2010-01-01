@@ -21,7 +21,7 @@ sub new
         numver   => '',
         strver   => '',
         vcver    => undef,
-		platform => undef,
+        platform => undef,
     };
     bless $self;
 	# integer_datetimes is now the default
@@ -123,7 +123,7 @@ sub copyFile
 sub GenerateFiles
 {
     my $self = shift;
-	my $bits = $self->{platform} eq 'Win32' ? 32 : 64;
+    my $bits = $self->{platform} eq 'Win32' ? 32 : 64;
 
     # Parse configure.in to get version numbers
     open(C,"configure.in") || confess("Could not open configure.in for reading\n");
