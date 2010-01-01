@@ -130,7 +130,11 @@ PgStat_MsgBgWriter BgWriterStats;
  * Local data
  * ----------
  */
+#ifndef WIN32
 NON_EXEC_STATIC int pgStatSock = -1;
+#else
+NON_EXEC_STATIC SOCKET pgStatSock = -1;
+#endif
 
 static struct sockaddr_storage pgStatAddr;
 

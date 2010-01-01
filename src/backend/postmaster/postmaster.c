@@ -4408,7 +4408,11 @@ extern slock_t *ProcStructLock;
 extern PROC_HDR *ProcGlobal;
 extern PGPROC *AuxiliaryProcs;
 extern PMSignalData *PMSignalState;
+#ifndef WIN32
 extern int	pgStatSock;
+#else
+extern SOCKET pgStatSock;
+#endif
 
 #ifndef WIN32
 #define write_inheritable_socket(dest, src, childpid) ((*(dest) = (src)), true)
