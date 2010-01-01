@@ -494,7 +494,13 @@ sub WriteConfiguration
     }
     $libs =~ s/ $//;
     $libs =~ s/__CFGNAME__/$cfgname/g;
+
     my $targetmachine = $self->{platform} eq 'Win32' ? 1 : 17;
+
+# Warning 4197 is about double exporting, disable this per
+# http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
+    $self->DisableLinkerWarning(4197) if ($self->{platform} eq 'x64');
+
     print $f <<EOF;
   <Configuration Name="$cfgname|$self->{platform}" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
 	ConfigurationType="$cfgtype" UseOfMFC="0" ATLMinimizesCRunTimeLibraryUsage="FALSE" CharacterSet="2" WholeProgramOptimization="$p->{wholeopt}">
