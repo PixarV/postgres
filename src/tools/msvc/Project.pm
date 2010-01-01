@@ -499,7 +499,7 @@ sub WriteConfiguration
 
 # Warning 4197 is about double exporting, disable this per
 # http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
-    $self->DisableLinkerWarning(4197) if ($self->{platform} eq 'x64');
+    $self->DisableLinkerWarnings('4197') if ($self->{platform} eq 'x64');
 
     print $f <<EOF;
   <Configuration Name="$cfgname|$self->{platform}" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
