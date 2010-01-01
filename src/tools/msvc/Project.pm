@@ -346,11 +346,11 @@ sub Save
     if ($self->{type} eq "dll" && !$self->{def})
     {
         $self->FullExportDLL($self->{name} . ".lib");
-
-        # Warning 4197 is about double exporting, disable this per
-        # http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
-        $self->DisableLinkerWarnings('4197') if ($self->{platform} eq 'x64');
     }
+
+	# Warning 4197 is about double exporting, disable this per
+	# http://connect.microsoft.com/VisualStudio/feedback/ViewFeedback.aspx?FeedbackID=99193
+	$self->DisableLinkerWarnings('4197') if ($self->{platform} eq 'x64');
 
     # Dump the project
     open(F, ">$self->{name}.vcproj") || croak("Could not write to $self->{name}.vcproj\n");
