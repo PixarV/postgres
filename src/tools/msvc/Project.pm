@@ -435,8 +435,8 @@ sub GenerateCustomTool
     my ($self, $desc, $tool, $output, $cfg) = @_;
     if (!defined($cfg))
     {
-        return GenerateCustomTool($desc, $tool, $output, 'Debug')
-          .GenerateCustomTool($desc, $tool, $output, 'Release');
+        return $self->GenerateCustomTool($desc, $tool, $output, 'Debug') .
+          $self->GenerateCustomTool($desc, $tool, $output, 'Release');
     }
     return
 "<FileConfiguration Name=\"$cfg|$self->{platform}\"><Tool Name=\"VCCustomBuildTool\" Description=\"$desc\" CommandLine=\"$tool\" AdditionalDependencies=\"\" Outputs=\"$output\" /></FileConfiguration>";
