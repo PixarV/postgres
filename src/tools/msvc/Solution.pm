@@ -83,7 +83,7 @@ sub IsNewer
     my ($newfile, $oldfile) = @_;
     if ($oldfile ne 'src\tools\msvc\config.pl')
     {
-        return 1 if IsNewer($newfile, 'src\tools\msvc\config.pl');
+        return 1 if (-f 'src\tools\msvc\config.pl') && IsNewer($newfile, 'src\tools\msvc\config.pl');
     }
     return 1 if (!(-e $newfile));
     my @nstat = stat($newfile);
