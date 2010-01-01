@@ -392,7 +392,7 @@ EOF
             $of =~ s/\.y$/.c/;
             $of =~ s{^src\\pl\\plpgsql\\src\\gram.c$}{src\\pl\\plpgsql\\src\\pl_gram.c};
             print F '>'
-              . GenerateCustomTool('Running bison on ' . $f,
+              . $self->GenerateCustomTool('Running bison on ' . $f,
                 'cmd /V:ON /c src\tools\msvc\pgbison.bat ' . $f, $of)
               . '</File>' . "\n";
         }
@@ -401,7 +401,7 @@ EOF
             my $of = $f;
             $of =~ s/\.l$/.c/;
             print F '>'
-              . GenerateCustomTool('Running flex on ' . $f, 'src\tools\msvc\pgflex.bat ' . $f,$of)
+              . $self->GenerateCustomTool('Running flex on ' . $f, 'src\tools\msvc\pgflex.bat ' . $f,$of)
               . '</File>' . "\n";
         }
         elsif (defined($uniquefiles{$file}))
@@ -432,7 +432,7 @@ EOF
 
 sub GenerateCustomTool
 {
-    my ($desc, $tool, $output, $cfg) = @_;
+    my ($self, $desc, $tool, $output, $cfg) = @_;
     if (!defined($cfg))
     {
         return GenerateCustomTool($desc, $tool, $output, 'Debug')
