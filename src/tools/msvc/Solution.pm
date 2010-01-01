@@ -81,7 +81,7 @@ sub DetermineToolVersions
 	open(P,"cl /? 2>NUL|") || die "cl command not found";
 	while (<P>) {
 		if (/^\/favor:</) {
-			$self->{platform} = 'Win64';
+			$self->{platform} = 'x64';
 			last;
 		}
 	}

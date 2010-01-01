@@ -6,7 +6,7 @@ my @def;
 #
 
 die "Usage: gendef.pl <modulepath> <platform>\n" unless
-   (($ARGV[0] =~ /\\([^\\]+$)/) && ($ARGV[1] == 'Win32' || $ARGV[1] == 'Win64'));
+   (($ARGV[0] =~ /\\([^\\]+$)/) && ($ARGV[1] == 'Win32' || $ARGV[1] == 'x64'));
 my $defname = uc $1;
 my $platform = $2;
 
@@ -57,7 +57,7 @@ foreach my $f (sort @def)
 {
     next if ($f eq $last);
     $last = $f;
-    $f =~ s/^_// unless ($platform eq "Win64"); # win64 has new format of exports
+    $f =~ s/^_// unless ($platform eq "x64"); # win64 has new format of exports
     $i++;
 
     #   print DEF "  $f \@ $i\n";  # ordinaled exports?
