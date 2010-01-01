@@ -123,6 +123,7 @@ sub copyFile
 sub GenerateFiles
 {
     my $self = shift;
+	my $bits = $self->{platform} eq 'Win32' ? 32 : 64;
 
     # Parse configure.in to get version numbers
     open(C,"configure.in") || confess("Could not open configure.in for reading\n");
@@ -158,8 +159,7 @@ sub GenerateFiles
         {
             s{PG_VERSION "[^"]+"}{PG_VERSION "$self->{strver}"};
             s{PG_VERSION_NUM \d+}{PG_VERSION_NUM $self->{numver}};
-            # XXX: When we support 64-bit, need to remove this hardcoding
-s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", 32-bit"};
+s{PG_VERSION_STR "[^"]+"}{__STRINGIFY(x) #x\n#define __STRINGIFY2(z) __STRINGIFY(z)\n#define PG_VERSION_STR "PostgreSQL $self->{strver}, compiled by Visual C++ build " __STRINGIFY2(_MSC_VER) ", $bits-bit"};
             print O;
         }
 		print O "#define PG_MAJORVERSION \"$self->{majorver}\"\n";
