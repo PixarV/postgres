@@ -33,7 +33,8 @@ sub new
         solution        => $solution,
         disablewarnings => '4018;4244;4273;4102;4090',
         disablelinkerwarnings => '',
-        vcver           => $solution->{vcver}
+        vcver           => $solution->{vcver},
+        platform        => $solution->{platform},
     };
 
     bless $self;
@@ -410,8 +411,8 @@ EOF
             my $obj = $dir;
             $obj =~ s/\\/_/g;
             print F
-"><FileConfiguration Name=\"Debug|Win32\"><Tool Name=\"VCCLCompilerTool\" ObjectFile=\".\\debug\\$self->{name}\\$obj"
-              . "_$file.obj\" /></FileConfiguration><FileConfiguration Name=\"Release|Win32\"><Tool Name=\"VCCLCompilerTool\" ObjectFile=\".\\release\\$self->{name}\\$obj"
+"><FileConfiguration Name=\"Debug|$self->{platform}\"><Tool Name=\"VCCLCompilerTool\" ObjectFile=\".\\debug\\$self->{name}\\$obj"
+              . "_$file.obj\" /></FileConfiguration><FileConfiguration Name=\"Release|$self->{platform}\"><Tool Name=\"VCCLCompilerTool\" ObjectFile=\".\\release\\$self->{name}\\$obj"
               . "_$file.obj\" /></FileConfiguration></File>\n";
         }
         else
@@ -438,7 +439,7 @@ sub GenerateCustomTool
           .GenerateCustomTool($desc, $tool, $output, 'Release');
     }
     return
-"<FileConfiguration Name=\"$cfg|Win32\"><Tool Name=\"VCCustomBuildTool\" Description=\"$desc\" CommandLine=\"$tool\" AdditionalDependencies=\"\" Outputs=\"$output\" /></FileConfiguration>";
+"<FileConfiguration Name=\"$cfg|$self->{platform}\"><Tool Name=\"VCCustomBuildTool\" Description=\"$desc\" CommandLine=\"$tool\" AdditionalDependencies=\"\" Outputs=\"$output\" /></FileConfiguration>";
 }
 
 sub WriteReferences
@@ -460,7 +461,7 @@ sub WriteHeader
     print $f <<EOF;
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject ProjectType="Visual C++" Version="$self->{vcver}" Name="$self->{name}" ProjectGUID="$self->{guid}">
- <Platforms><Platform Name="Win32"/></Platforms>
+ <Platforms><Platform Name="$self->{platform}"/></Platforms>
  <Configurations>
 EOF
     $self->WriteConfiguration($f, 'Debug',
@@ -494,7 +495,7 @@ sub WriteConfiguration
     $libs =~ s/ $//;
     $libs =~ s/__CFGNAME__/$cfgname/g;
     print $f <<EOF;
-  <Configuration Name="$cfgname|Win32" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
+  <Configuration Name="$cfgname|$self->{platform}" OutputDirectory=".\\$cfgname\\$self->{name}" IntermediateDirectory=".\\$cfgname\\$self->{name}"
 	ConfigurationType="$cfgtype" UseOfMFC="0" ATLMinimizesCRunTimeLibraryUsage="FALSE" CharacterSet="2" WholeProgramOptimization="$p->{wholeopt}">
 	<Tool Name="VCCLCompilerTool" Optimization="$p->{opt}"
 		AdditionalIncludeDirectories="$self->{prefixincludes}src/include;src/include/port/win32;src/include/port/win32_msvc;$self->{includes}"
@@ -540,7 +541,7 @@ EOF
     if ($self->{builddef})
     {
         print $f
-"\t<Tool Name=\"VCPreLinkEventTool\" Description=\"Generate DEF file\" CommandLine=\"perl src\\tools\\msvc\\gendef.pl $cfgname\\$self->{name}\" />\n";
+"\t<Tool Name=\"VCPreLinkEventTool\" Description=\"Generate DEF file\" CommandLine=\"perl src\\tools\\msvc\\gendef.pl $cfgname\\$self->{name} $self->{platform}\" />\n";
     }
     print $f <<EOF;
   </Configuration>

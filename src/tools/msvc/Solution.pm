@@ -460,8 +460,8 @@ EOF
     print SLN <<EOF;
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|Win32 = Debug|Win32
-		Release|Win32 = Release|Win32
+		Debug|$self->{platform}= Debug|$self->{platform}
+		Release|$self->{platform} = Release|$self->{platform}
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 EOF
@@ -471,10 +471,10 @@ EOF
         foreach my $proj (@{$self->{projects}->{$fld}})
         {
             print SLN <<EOF;
-		$proj->{guid}.Debug|Win32.ActiveCfg = Debug|Win32
-		$proj->{guid}.Debug|Win32.Build.0  = Debug|Win32	
-		$proj->{guid}.Release|Win32.ActiveCfg = Release|Win32
-		$proj->{guid}.Release|Win32.Build.0 = Release|Win32
+		$proj->{guid}.Debug|$self->{platform}.ActiveCfg = Debug|$self->{platform}
+		$proj->{guid}.Debug|$self->{platform}.Build.0  = Debug|$self->{platform}
+		$proj->{guid}.Release|$self->{platform}.ActiveCfg = Release|$self->{platform}
+		$proj->{guid}.Release|$self->{platform}.Build.0 = Release|$self->{platform}
 EOF
         }
     }
