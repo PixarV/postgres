@@ -836,12 +836,24 @@ typedef LONG slock_t;
 
 #define SPIN_DELAY() spin_delay()
 
+/* If using Visual C 2005 or 2008 on Win64, inline assembly is unavailable.
+ * Use a __noop instrinsic instead of rep nop.
+ * Might be slightly less efficient on EMT64, but its the same for AMD.
+ */
+#if defined(_WIN64) && defined(_MSC_VER) && (_MSC_VER == 1400 || _MSC_VER == 1500)
+static __forceinline void
+spin_delay(void)
+{
+	__noop();
+}
+#else
 static __forceinline void
 spin_delay(void)
 {
 	/* See comment for gcc code. Same code, MASM syntax */
 	__asm rep nop;
 }
+#endif
 
 #endif
 
