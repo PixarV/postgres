@@ -343,7 +343,7 @@ sub Save
     my ($self) = @_;
 
     # Set BUILDING_DLL for all DLL projects
-    if ($self->{type} eq "DLL")
+    if ($self->{type} eq "dll")
     {
         $self->AddDefine("BUILDING_DLL");
     }
