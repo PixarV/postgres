@@ -171,6 +171,7 @@ sub FullExportDLL
     $self->{builddef} = 1;
     $self->{def} = ".\\__CFGNAME__\\$self->{name}\\$self->{name}.def";
     $self->{implib} = "__CFGNAME__\\$self->{name}\\$libname";
+    $self->AddDefine('NO_DECLSPEC_EXPORT');
 }
 
 sub UseDef
