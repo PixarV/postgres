@@ -66,7 +66,6 @@ sub mkvcbuild
     $postgres->AddFiles('src\backend\bootstrap','bootscanner.l','bootparse.y');
     $postgres->AddFiles('src\backend\utils\misc','guc-file.l');
     $postgres->AddDefine('BUILDING_DLL');
-    $postgres->AddDefine('NO_DECLSPEC_EXPORT');
     $postgres->AddLibrary('wsock32.lib');
     $postgres->AddLibrary('ws2_32.lib');
     $postgres->AddLibrary('secur32.lib');

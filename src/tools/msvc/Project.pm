@@ -171,7 +171,6 @@ sub FullExportDLL
     $self->{builddef} = 1;
     $self->{def} = ".\\__CFGNAME__\\$self->{name}\\$self->{name}.def";
     $self->{implib} = "__CFGNAME__\\$self->{name}\\$libname";
-    $self->AddDefine('NO_DECLSPEC_EXPORT');
 }
 
 sub UseDef
@@ -341,12 +340,6 @@ sub DisableLinkerWarnings
 sub Save
 {
     my ($self) = @_;
-
-    # Set BUILDING_DLL for all DLL projects
-    if ($self->{type} eq "dll")
-    {
-        $self->AddDefine("BUILDING_DLL");
-    }
 
     # If doing DLL and haven't specified a DEF file, do a full export of all symbols
     # in the project.

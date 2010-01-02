@@ -53,15 +53,7 @@
 #endif
 
 #ifdef BUILDING_DLL
-#ifdef NO_DECLSPEC_EXPORT
-/*
- * When exporting all symbols, we must avoid the __declspec(dllexport)
- * on individual symbols to avoid compiler warnings on Win64.
- */
-#define PGDLLIMPORT
-#else
 #define PGDLLIMPORT __declspec (dllexport)
-#endif
 #else							/* not BUILDING_DLL */
 #define PGDLLIMPORT __declspec (dllimport)
 #endif
