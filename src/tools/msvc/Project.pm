@@ -342,6 +342,12 @@ sub Save
 {
     my ($self) = @_;
 
+    # Set BUILDING_DLL for all DLL projects
+    if ($self->{type} eq "DLL")
+    {
+        $self->AddDefine("BUILDING_DLL");
+    }
+
     # If doing DLL and haven't specified a DEF file, do a full export of all symbols
     # in the project.
     if ($self->{type} eq "dll" && !$self->{def})
