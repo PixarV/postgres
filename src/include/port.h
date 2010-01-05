@@ -17,9 +17,16 @@
 #include <netdb.h>
 #include <pwd.h>
 
+/* socket has a different definition on WIN32 */
+#ifndef WIN32
+typedef char pgsocket;
+#else
+typedef SOCKET pgsocket;
+#endif
+
 /* non-blocking */
-extern bool pg_set_noblock(int sock);
-extern bool pg_set_block(int sock);
+extern bool pg_set_noblock(pgsocket sock);
+extern bool pg_set_block(pgsocket sock);
 
 /* Portable path handling for Unix/Win32 (in path.c) */
 

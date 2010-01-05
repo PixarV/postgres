@@ -130,7 +130,7 @@ PgStat_MsgBgWriter BgWriterStats;
  * Local data
  * ----------
  */
-NON_EXEC_STATIC int pgStatSock = -1;
+NON_EXEC_STATIC pgsocket pgStatSock = -1;
 
 static struct sockaddr_storage pgStatAddr;
 

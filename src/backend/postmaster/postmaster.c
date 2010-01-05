@@ -172,7 +172,7 @@ int			ReservedBackends;
 
 /* The socket(s) we're listening to. */
 #define MAXLISTEN	64
-static int	ListenSocket[MAXLISTEN];
+static pgsocket ListenSocket[MAXLISTEN];
 
 /*
  * Set by the -o option
@@ -4408,7 +4408,7 @@ extern slock_t *ProcStructLock;
 extern PROC_HDR *ProcGlobal;
 extern PGPROC *AuxiliaryProcs;
 extern PMSignalData *PMSignalState;
-extern int	pgStatSock;
+extern pgsocket pgStatSock;
 
 #ifndef WIN32
 #define write_inheritable_socket(dest, src, childpid) ((*(dest) = (src)), true)

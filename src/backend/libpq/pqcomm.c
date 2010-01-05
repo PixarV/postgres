@@ -240,10 +240,10 @@ StreamDoUnlink(int code, Datum arg)
 int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketName,
-				 int ListenSocket[], int MaxListen)
+				 pgsocket ListenSocket[], int MaxListen)
 {
-	int			fd,
-				err;
+	pgsocket	fd;
+	int			err;
 	int			maxconn;
 	int			ret;
 	char		portNumberStr[32];
@@ -570,7 +570,7 @@ Setup_AF_UNIX(void)
  * RETURNS: STATUS_OK or STATUS_ERROR
  */
 int
-StreamConnection(int server_fd, Port *port)
+StreamConnection(pgsocket server_fd, Port *port)
 {
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
@@ -676,7 +676,7 @@ StreamConnection(int server_fd, Port *port)
  * we do NOT want to send anything to the far end.
  */
 void
-StreamClose(int sock)
+StreamClose(pgsocket sock)
 {
 	closesocket(sock);
 }
