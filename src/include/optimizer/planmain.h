@@ -4,7 +4,7 @@
  *	  prototypes for various files in optimizer/plan
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * $PostgreSQL$
@@ -39,6 +39,7 @@ extern Plan *optimize_minmax_aggregates(PlannerInfo *root, List *tlist,
  * prototypes for plan/createplan.c
  */
 extern Plan *create_plan(PlannerInfo *root, Path *best_path);
+extern Node *fix_indexqual_operand(Node *node, IndexOptInfo *index);
 extern SubqueryScan *make_subqueryscan(List *qptlist, List *qpqual,
 				  Index scanrelid, Plan *subplan,
 				  List *subrtable, List *subrowmark);

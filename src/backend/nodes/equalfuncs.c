@@ -18,7 +18,7 @@
  * "x" to be considered equal() to another reference to "x" in the query.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -623,6 +623,7 @@ _equalNullTest(NullTest *a, NullTest *b)
 {
 	COMPARE_NODE_FIELD(arg);
 	COMPARE_SCALAR_FIELD(nulltesttype);
+	COMPARE_SCALAR_FIELD(argisrow);
 
 	return true;
 }

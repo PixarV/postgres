@@ -4,7 +4,7 @@
  *	  fetch tuples from a GiST scan.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -413,14 +413,20 @@ gistindex_keytest(IndexTuple tuple,
 		{
 			/*
 			 * On non-leaf page we can't conclude that child hasn't NULL
-			 * values because of assumption in GiST: uinon (VAL, NULL) is VAL
-			 * But if on non-leaf page key IS  NULL then all childs has NULL.
+			 * values because of assumption in GiST: union (VAL, NULL) is VAL.
+			 * But if on non-leaf page key IS NULL, then all children are NULL.
 			 */
-
-			Assert(key->sk_flags & SK_SEARCHNULL);
-
-			if (GistPageIsLeaf(p) && !isNull)
-				return false;
+			if (key->sk_flags & SK_SEARCHNULL)
+			{
+				if (GistPageIsLeaf(p) && !isNull)
+					return false;
+			}
+			else
+			{
+				Assert(key->sk_flags & SK_SEARCHNOTNULL);
+				if (isNull)
+					return false;
+			}
 		}
 		else if (isNull)
 		{

@@ -11,7 +11,7 @@
  * be handled easily in a simple depth-first traversal.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -1506,6 +1506,7 @@ _copyNullTest(NullTest *from)
 
 	COPY_NODE_FIELD(arg);
 	COPY_SCALAR_FIELD(nulltesttype);
+	COPY_SCALAR_FIELD(argisrow);
 
 	return newnode;
 }

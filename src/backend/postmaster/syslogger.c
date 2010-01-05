@@ -14,7 +14,7 @@
  *
  * Author: Andreas Pflug <pgadmin@pse-consulting.de>
  *
- * Copyright (c) 2004-2009, PostgreSQL Global Development Group
+ * Copyright (c) 2004-2010, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -573,7 +573,7 @@ SysLogger_Start(void)
 				 * chunking protocol.
 				 */
 				fflush(stderr);
-				fd = _open_osfhandle((long) syslogPipe[1],
+				fd = _open_osfhandle((intptr_t) syslogPipe[1],
 									 _O_APPEND | _O_BINARY);
 				if (dup2(fd, _fileno(stderr)) < 0)
 					ereport(FATAL,

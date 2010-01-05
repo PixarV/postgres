@@ -4,7 +4,7 @@
  *	  Routines to determine which indexes are usable for scanning a
  *	  given relation, and create Paths accordingly.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1218,7 +1218,7 @@ match_clause_to_indexcol(IndexOptInfo *index,
 	 * Clause must be a binary opclause, or possibly a ScalarArrayOpExpr
 	 * (which is always binary, by definition).  Or it could be a
 	 * RowCompareExpr, which we pass off to match_rowcompare_to_indexcol().
-	 * Or, if the index supports it, we can handle IS NULL clauses.
+	 * Or, if the index supports it, we can handle IS NULL/NOT NULL clauses.
 	 */
 	if (is_opclause(clause))
 	{
@@ -1256,7 +1256,7 @@ match_clause_to_indexcol(IndexOptInfo *index,
 	{
 		NullTest   *nt = (NullTest *) clause;
 
-		if (nt->nulltesttype == IS_NULL &&
+		if (!nt->argisrow &&
 			match_index_to_operand((Node *) nt->arg, indexcol, index))
 			return true;
 		return false;

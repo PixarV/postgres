@@ -3,7 +3,7 @@
  * nodeHash.c
  *	  Routines to hash relations for hashjoin
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1006,6 +1006,7 @@ ExecHashBuildSkewHash(HashJoinTable hashtable, Hash *node, int mcvsToUse)
 
 	if (get_attstatsslot(statsTuple, node->skewColType, node->skewColTypmod,
 						 STATISTIC_KIND_MCV, InvalidOid,
+						 NULL,
 						 &values, &nvalues,
 						 &numbers, &nnumbers))
 	{

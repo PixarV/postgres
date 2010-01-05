@@ -32,7 +32,7 @@
  *	  clients.
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -403,7 +403,11 @@ typedef struct
 	int			ListenSocket[MAXLISTEN];
 	long		MyCancelKey;
 	int			MyPMChildSlot;
+#ifndef WIN32
 	unsigned long UsedShmemSegID;
+#else
+	 HANDLE		UsedShmemSegID;
+#endif
 	void	   *UsedShmemSegAddr;
 	slock_t    *ShmemLock;
 	VariableCache ShmemVariableCache;

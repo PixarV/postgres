@@ -4,7 +4,7 @@
  *	   routines for accessing the system catalogs
  *
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -541,6 +541,7 @@ get_relation_constraints(PlannerInfo *root,
 												  att->atttypmod,
 												  0);
 					ntest->nulltesttype = IS_NOT_NULL;
+					ntest->argisrow = type_is_rowtype(att->atttypid);
 					result = lappend(result, ntest);
 				}
 			}

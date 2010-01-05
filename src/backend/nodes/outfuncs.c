@@ -3,7 +3,7 @@
  * outfuncs.c
  *	  Output functions for Postgres tree nodes.
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1229,6 +1229,7 @@ _outNullTest(StringInfo str, NullTest *node)
 
 	WRITE_NODE_FIELD(arg);
 	WRITE_ENUM_FIELD(nulltesttype, NullTestType);
+	WRITE_BOOL_FIELD(argisrow);
 }
 
 static void

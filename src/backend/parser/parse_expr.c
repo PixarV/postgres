@@ -3,7 +3,7 @@
  * parse_expr.c
  *	  handle expressions in parser
  *
- * Portions Copyright (c) 1996-2009, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2010, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -276,6 +276,7 @@ transformExpr(ParseState *pstate, Node *expr)
 
 				n->arg = (Expr *) transformExpr(pstate, (Node *) n->arg);
 				/* the argument can be any type, so don't coerce it */
+				n->argisrow = type_is_rowtype(exprType((Node *) n->arg));
 				result = expr;
 				break;
 			}
