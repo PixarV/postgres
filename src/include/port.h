@@ -19,7 +19,7 @@
 
 /* socket has a different definition on WIN32 */
 #ifndef WIN32
-typedef char pgsocket;
+typedef int pgsocket;
 #else
 typedef SOCKET pgsocket;
 #endif
