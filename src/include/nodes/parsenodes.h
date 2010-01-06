@@ -1477,6 +1477,14 @@ typedef struct DropTableSpaceStmt
 	bool		missing_ok;		/* skip error if missing? */
 } DropTableSpaceStmt;
 
+typedef struct AlterTableSpaceOptionsStmt
+{
+	NodeTag		type;
+	char	   *tablespacename;
+	List	   *options;
+	bool		isReset;
+} AlterTableSpaceOptionsStmt;
+
 /* ----------------------
  *		Create/Drop FOREIGN DATA WRAPPER Statements
  * ----------------------
@@ -2236,7 +2244,8 @@ typedef enum VacuumOption
 	VACOPT_ANALYZE		= 1 << 1,	/* do ANALYZE */
 	VACOPT_VERBOSE		= 1 << 2,	/* print progress info */
 	VACOPT_FREEZE		= 1 << 3,	/* FREEZE option */
-	VACOPT_FULL			= 1 << 4	/* FULL (non-concurrent) vacuum */
+	VACOPT_FULL			= 1 << 4,	/* FULL (non-concurrent) vacuum */
+	VACOPT_INPLACE		= 1 << 5	/* traditional FULL INPLACE vacuum */
 } VacuumOption;
 
 typedef struct VacuumStmt
