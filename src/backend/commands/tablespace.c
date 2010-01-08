@@ -82,14 +82,14 @@ char	   *temp_tablespaces = NULL;
 
 
 static bool remove_tablespace_directories(Oid tablespaceoid, bool redo);
-static void set_short_version(const char *path);
+static void write_version_file(const char *path);
 
 
 /*
  * Each database using a table space is isolated into its own name space
  * by a subdirectory named for the database OID.  On first creation of an
  * object in the tablespace, create the subdirectory.  If the subdirectory
- * already exists, just fall through quietly.
+ * already exists, fall through quietly.
  *
  * isRedo indicates that we are creating an object during WAL replay.
  * In this case we will cope with the possibility of the tablespace
@@ -99,9 +99,8 @@ static void set_short_version(const char *path);
  * symlink would normally be.  This isn't an exact replay of course, but
  * it's the best we can do given the available information.
  *
- * If tablespaces are not supported, you might think this could be a no-op,
- * but you'd be wrong: we still need it in case we have to re-create a
- * database subdirectory (of $PGDATA/base) during WAL replay.
+ * If tablespaces are not supported, we still need it in case we have to
+ * re-create a database subdirectory (of $PGDATA/base) during WAL replay.
  */
 void
 TablespaceCreateDbspace(Oid spcNode, Oid dbNode, bool isRedo)
@@ -123,6 +122,7 @@ TablespaceCreateDbspace(Oid spcNode, Oid dbNode, bool isRedo)
 
 	if (stat(dir, &st) < 0)
 	{
+		/* Directory does not exist? */
 		if (errno == ENOENT)
 		{
 			/*
@@ -137,29 +137,34 @@ TablespaceCreateDbspace(Oid spcNode, Oid dbNode, bool isRedo)
 			 */
 			if (stat(dir, &st) == 0 && S_ISDIR(st.st_mode))
 			{
-				/* need not do anything */
+				/* Directory was created */
 			}
 			else
 			{
-				/* OK, go for it */
+				/* Directory creation failed? */
 				if (mkdir(dir, S_IRWXU) < 0)
 				{
 					char	   *parentdir;
 
+					/* Failure other than not exists? */
 					if (errno != ENOENT || !isRedo)
 						ereport(ERROR,
 								(errcode_for_file_access(),
 							  errmsg("could not create directory \"%s\": %m",
 									 dir)));
-					/* Try to make parent directory too */
+
+					/* Parent directory must be missing */
 					parentdir = pstrdup(dir);
 					get_parent_directory(parentdir);
+					/* Can't create parent either? */
 					if (mkdir(parentdir, S_IRWXU) < 0)
 						ereport(ERROR,
 								(errcode_for_file_access(),
 							  errmsg("could not create directory \"%s\": %m",
 									 parentdir)));
 					pfree(parentdir);
+
+					/* Create database directory */
 					if (mkdir(dir, S_IRWXU) < 0)
 						ereport(ERROR,
 								(errcode_for_file_access(),
@@ -179,7 +184,7 @@ TablespaceCreateDbspace(Oid spcNode, Oid dbNode, bool isRedo)
 	}
 	else
 	{
-		/* be paranoid */
+		/* Is it not a directory? */
 		if (!S_ISDIR(st.st_mode))
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
@@ -249,7 +254,7 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	 * '/<dboid>/<relid>.<nnn>'  (XXX but do we ever form the whole path
 	 * explicitly?	This may be overly conservative.)
 	 */
-	if (strlen(location) >= (MAXPGPATH - 1 - OIDCHARS - 1 - OIDCHARS - 1 - OIDCHARS))
+	if (strlen(location) >= MAXPGPATH - 1 - OIDCHARS - 1 - OIDCHARS - 1 - OIDCHARS)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("tablespace location \"%s\" is too long",
@@ -332,7 +337,7 @@ CreateTableSpace(CreateTableSpaceStmt *stmt)
 	 * (the emptiness check above will fail), and to label tablespace
 	 * directories by PG version.
 	 */
-	set_short_version(location);
+	write_version_file(location);
 
 	/*
 	 * All seems well, create the symlink
@@ -673,46 +678,21 @@ remove_tablespace_directories(Oid tablespaceoid, bool redo)
  * write out the PG_VERSION file in the specified directory
  */
 static void
-set_short_version(const char *path)
+write_version_file(const char *path)
 {
-	char	   *short_version;
-	bool		gotdot = false;
-	int			end;
 	char	   *fullname;
 	FILE	   *version_file;
-
-	/* Construct short version string (should match initdb.c) */
-	short_version = pstrdup(PG_VERSION);
-
-	for (end = 0; short_version[end] != '\0'; end++)
-	{
-		if (short_version[end] == '.')
-		{
-			Assert(end != 0);
-			if (gotdot)
-				break;
-			else
-				gotdot = true;
-		}
-		else if (short_version[end] < '0' || short_version[end] > '9')
-		{
-			/* gone past digits and dots */
-			break;
-		}
-	}
-	Assert(end > 0 && short_version[end - 1] != '.' && gotdot);
-	short_version[end] = '\0';
 
 	/* Now write the file */
 	fullname = palloc(strlen(path) + 11 + 1);
 	sprintf(fullname, "%s/PG_VERSION", path);
-	version_file = AllocateFile(fullname, PG_BINARY_W);
-	if (version_file == NULL)
+
+	if ((version_file = AllocateFile(fullname, PG_BINARY_W)) == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m",
 						fullname)));
-	fprintf(version_file, "%s\n", short_version);
+	fprintf(version_file, "%s\n", PG_MAJORVERSION);
 	if (FreeFile(version_file))
 		ereport(ERROR,
 				(errcode_for_file_access(),
@@ -720,7 +700,6 @@ set_short_version(const char *path)
 						fullname)));
 
 	pfree(fullname);
-	pfree(short_version);
 }
 
 /*
@@ -1370,7 +1349,7 @@ tblspc_redo(XLogRecPtr lsn, XLogRecord *record)
 						 location)));
 
 		/* Create or re-create the PG_VERSION file in the target directory */
-		set_short_version(location);
+		write_version_file(location);
 
 		/* Create the symlink if not already present */
 		linkloc = (char *) palloc(OIDCHARS + OIDCHARS + 1);
