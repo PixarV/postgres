@@ -2477,7 +2477,7 @@ radius_add_attribute(radius_packet *packet, int type, const unsigned char *data,
 	radius_attribute		*attr;
 
 	/* FIXME: ensure size does ont go beyond 1024 */
-	if (packet->length + attr->length > RADIUS_BUFFER_SIZE)
+	if (packet->length + len > RADIUS_BUFFER_SIZE)
 	{
 		/*
 		 * With remotely realistic data, this can never happen. But catch it just to make
