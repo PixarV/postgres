@@ -1194,6 +1194,11 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				REQUIRE_AUTH_OPTION(uaRADIUS, "radiussecret", "radius");
 				parsedline->radiussecret = pstrdup(c);
 			}
+			else if (strcmp(token, "radiusidentifier") == 0)
+			{
+				REQUIRE_AUTH_OPTION(uaRADIUS, "radiusidentifier", "radius");
+				parsedline->radiusidentifier = pstrdup(c);
+			}
 			else
 			{
 				ereport(LOG,

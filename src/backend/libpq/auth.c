@@ -2502,6 +2502,7 @@ static int
 CheckRADIUSAuth(Port *port)
 {
 	char			   *passwd;
+	char			   *identifier = "postgresql";
 	char				radius_buffer[RADIUS_BUFFER_SIZE];
 	char				receive_buffer[RADIUS_BUFFER_SIZE];
 	radius_packet	   *packet = (radius_packet *)radius_buffer;
@@ -2548,6 +2549,9 @@ CheckRADIUSAuth(Port *port)
 	}
 	remoteaddr.sin_port = htons(port->hba->radiusport);
 
+	if (port->hba->radiusidentifier && port->hba->radiusidentifier[0])
+		identifier = port->hba->radiusidentifier;
+
 	/* Send password request to client */
 	sendAuthRequest(port, AUTH_REQ_PASSWORD);
 
@@ -2578,7 +2582,7 @@ CheckRADIUSAuth(Port *port)
 	packet->id = packet->vector[0];
 	radius_add_attribute(packet, RADIUS_SERVICE_TYPE, (unsigned char *) &service, sizeof(service));
 	radius_add_attribute(packet, RADIUS_USER_NAME, (unsigned char *) port->user_name, strlen(port->user_name));
-	radius_add_attribute(packet, RADIUS_NAS_IDENTIFIER, (unsigned char *) "postgresql", 9);
+	radius_add_attribute(packet, RADIUS_NAS_IDENTIFIER, (unsigned char *) identifier, strlen(identifier));
 
 	/*
 	 * RADIUS password attributes are calculated as:
