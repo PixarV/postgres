@@ -658,7 +658,7 @@ pg_foreach_ifaddr(PgIfAddrCallback callback, void *cb_data)
 	size_t n_buffer = 1024;
 	pgsocket sock, fd;
 #ifdef HAVE_IPV6
-	int sock6;
+	pgsocket sock6;
 #endif
 	int i, total;
 
