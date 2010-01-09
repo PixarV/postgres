@@ -1025,9 +1025,8 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 					parsedline->auth_method != uaKrb5 &&
 					parsedline->auth_method != uaGSS &&
 					parsedline->auth_method != uaSSPI &&
-					parsedline->auth_method != uaCert &&
-					parsedline->auth_method != uaRADIUS)
-					INVALID_AUTH_OPTION("map", gettext_noop("ident, krb5, gssapi, sspi, radius and cert"));
+					parsedline->auth_method != uaCert)
+					INVALID_AUTH_OPTION("map", gettext_noop("ident, krb5, gssapi, sspi and cert"));
 				parsedline->usermap = pstrdup(c);
 			}
 			else if (strcmp(token, "clientcert") == 0)
