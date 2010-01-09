@@ -27,7 +27,8 @@ typedef enum UserAuth
 	uaSSPI,
 	uaPAM,
 	uaLDAP,
-	uaCert
+	uaCert,
+	uaRADIUS
 } UserAuth;
 
 typedef enum IPCompareMethod
@@ -71,6 +72,9 @@ typedef struct
 	char	   *krb_server_hostname;
 	char	   *krb_realm;
 	bool		include_realm;
+	char	   *radiusserver;
+	char	   *radiussecret;
+	int			radiusport;
 } HbaLine;
 
 /* kluge to avoid including libpq/libpq-be.h here */

@@ -947,6 +947,8 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 #else
 		unsupauth = "cert";
 #endif
+	else if (strcmp(token, "radius")== 0)
+		parsedline->auth_method = uaRADIUS;
 	else
 	{
 		ereport(LOG,
@@ -1023,8 +1025,9 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 					parsedline->auth_method != uaKrb5 &&
 					parsedline->auth_method != uaGSS &&
 					parsedline->auth_method != uaSSPI &&
-					parsedline->auth_method != uaCert)
-					INVALID_AUTH_OPTION("map", gettext_noop("ident, krb5, gssapi, sspi and cert"));
+					parsedline->auth_method != uaCert &&
+					parsedline->auth_method != uaRADIUS)
+					INVALID_AUTH_OPTION("map", gettext_noop("ident, krb5, gssapi, sspi, radius and cert"));
 				parsedline->usermap = pstrdup(c);
 			}
 			else if (strcmp(token, "clientcert") == 0)
@@ -1157,6 +1160,40 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				else
 					parsedline->include_realm = false;
 			}
+			else if (strcmp(token, "radiusserver") == 0)
+			{
+				REQUIRE_AUTH_OPTION(uaRADIUS, "radiusserver", "radius");
+				if (inet_addr(c) == INADDR_NONE)
+				{
+					ereport(LOG,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("invalid RADIUS server IP address: \"%s\"", c),
+						   errcontext("line %d of configuration file \"%s\"",
+									  line_num, HbaFileName)));
+					return false;
+
+				}
+				parsedline->radiusserver = pstrdup(c);
+			}
+			else if (strcmp(token, "radiusport") == 0)
+			{
+				REQUIRE_AUTH_OPTION(uaRADIUS, "radiusport", "radius");
+				parsedline->radiusport = atoi(c);
+				if (parsedline->radiusport == 0)
+				{
+					ereport(LOG,
+							(errcode(ERRCODE_CONFIG_FILE_ERROR),
+							 errmsg("invalid RADIUS port number: \"%s\"", c),
+						   errcontext("line %d of configuration file \"%s\"",
+									  line_num, HbaFileName)));
+					return false;
+				}
+			}
+			else if (strcmp(token, "radiussecret") == 0)
+			{
+				REQUIRE_AUTH_OPTION(uaRADIUS, "radiussecret", "radius");
+				parsedline->radiussecret = pstrdup(c);
+			}
 			else
 			{
 				ereport(LOG,
@@ -1207,6 +1244,12 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 								line_num, HbaFileName)));
 			return false;
 		}
+	}
+
+	if (parsedline->auth_method == uaRADIUS)
+	{
+		MANDATORY_AUTH_ARG(parsedline->radiusserver, "radiusserver", "radius");
+		MANDATORY_AUTH_ARG(parsedline->radiussecret, "radiussecret", "radius");
 	}
 
 	/*

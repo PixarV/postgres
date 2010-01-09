@@ -33,6 +33,7 @@
 #include "libpq/ip.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
+#include "libpq/md5.h"
 #include "miscadmin.h"
 #include "storage/ipc.h"
 
@@ -182,6 +183,12 @@ typedef SECURITY_STATUS
 static int	pg_SSPI_recvauth(Port *port);
 #endif
 
+/*----------------------------------------------------------------
+ * RADIUS Authentication
+ *----------------------------------------------------------------
+ */
+static int	CheckRADIUSAuth(Port *port);
+
 
 /*
  * Maximum accepted size of GSS and SSPI authentication tokens.
@@ -264,6 +271,9 @@ auth_failed(Port *port, int status)
 			break;
 		case uaLDAP:
 			errstr = gettext_noop("LDAP authentication failed for user \"%s\"");
+			break;
+		case uaRADIUS:
+			errstr = gettext_noop("RADIUS authentication failed for user \"%s\"");
 			break;
 		default:
 			errstr = gettext_noop("authentication failed for user \"%s\": invalid authentication method");
@@ -473,7 +483,9 @@ ClientAuthentication(Port *port)
 			Assert(false);
 #endif
 			break;
-
+		case uaRADIUS:
+			status = CheckRADIUSAuth(port);
+			break;
 		case uaTrust:
 			status = STATUS_OK;
 			break;
@@ -2415,3 +2427,335 @@ CheckCertAuth(Port *port)
 }
 
 #endif
+
+
+/*----------------------------------------------------------------
+ * RADIUS authentication
+ *----------------------------------------------------------------
+ */
+#define RADIUS_VECTOR_LENGTH 16
+#define RADIUS_HEADER_LENGTH 20
+
+typedef struct
+{
+	unsigned char	attribute;
+	unsigned char	length;
+	unsigned char	data[1];
+} radius_attribute;
+
+typedef struct
+{
+	unsigned char	code;
+	unsigned char	id;
+	unsigned short	length;
+	unsigned char	vector[RADIUS_VECTOR_LENGTH];
+} radius_packet;
+
+/* RADIUS packet types */
+#define RADIUS_ACCESS_REQUEST	1
+#define RADIUS_ACCESS_ACCEPT	2
+#define RADIUS_ACCESS_REJECT	3
+
+/* RAIDUS attributes */
+#define RADIUS_USER_NAME		1
+#define RADIUS_PASSWORD			2
+#define RADIUS_SERVICE_TYPE		6
+#define RADIUS_NAS_IDENTIFIER	32
+
+/* RADIUS service types */
+#define RADIUS_AUTHENTICATE_ONLY	8
+
+/* Maximum size of a RADIUS packet we will create or accept */
+#define RADIUS_BUFFER_SIZE 1024
+
+/* Seconds to wait - XXX: should be in a config variable! */
+#define RADIUS_TIMEOUT 3
+
+static void
+radius_add_attribute(radius_packet *packet, int type, const unsigned char *data, int len)
+{
+	radius_attribute		*attr;
+
+	/* FIXME: ensure size does ont go beyond 1024 */
+	if (packet->length + attr->length > RADIUS_BUFFER_SIZE)
+	{
+		/*
+		 * With remotely realistic data, this can never happen. But catch it just to make
+		 * sure we don't overrun a buffer. We'll just skip adding the broken attribute,
+		 * which will in the end cause authentication to fail.
+		 */
+		elog(WARNING,
+			 "Adding attribute code %i with length %i to radius packet would create oversize packet, ignoring",
+			 type, len);
+		return;
+
+	}
+
+	attr = (radius_attribute *) ((unsigned char *)packet + packet->length);
+	attr->attribute = type;
+	attr->length = len + 2; /* total size includes type and length */
+	memcpy(attr->data, data, len);
+	packet->length += attr->length;
+}
+
+static int
+CheckRADIUSAuth(Port *port)
+{
+	char			   *passwd;
+	char				radius_buffer[RADIUS_BUFFER_SIZE];
+	char				receive_buffer[RADIUS_BUFFER_SIZE];
+	radius_packet	   *packet = (radius_packet *)radius_buffer;
+	radius_packet	   *receivepacket = (radius_packet *)receive_buffer;
+	int32				service = htonl(RADIUS_AUTHENTICATE_ONLY);
+	unsigned char	   *cryptvector;
+	unsigned char		encryptedpassword[RADIUS_VECTOR_LENGTH];
+	int					packetlength;
+	int					sock;
+	struct sockaddr_in	localaddr;
+	struct sockaddr_in	remoteaddr;
+	socklen_t			addrsize;
+	fd_set				fdset;
+	struct timeval		timeout;
+	int					i,r;
+
+	/* Verify parameters */
+	if (!port->hba->radiusserver || port->hba->radiusserver[0] == '\0')
+	{
+		ereport(LOG,
+				(errmsg("RADIUS server not specified")));
+		return STATUS_ERROR;
+	}
+
+	if (!port->hba->radiussecret || port->hba->radiussecret[0] == '\0')
+	{
+		ereport(LOG,
+				(errmsg("RADIUS secret not specified")));
+		return STATUS_ERROR;
+	}
+
+	if (port->hba->radiusport == 0)
+		port->hba->radiusport = 1812;
+
+	memset(&remoteaddr, 0, sizeof(remoteaddr));
+	remoteaddr.sin_family = AF_INET;
+	remoteaddr.sin_addr.s_addr = inet_addr(port->hba->radiusserver);
+	if (remoteaddr.sin_addr.s_addr == INADDR_NONE)
+	{
+		ereport(LOG,
+				(errmsg("RADIUS server '%s' is not a valid IP address",
+						port->hba->radiusserver)));
+		return STATUS_ERROR;
+	}
+	remoteaddr.sin_port = htons(port->hba->radiusport);
+
+	/* Send password request to client */
+	sendAuthRequest(port, AUTH_REQ_PASSWORD);
+
+	passwd = recv_password_packet(port);
+	if (passwd == NULL)
+		return STATUS_EOF;		/* client wouldn't send password */
+
+	if (strlen(passwd) == 0)
+	{
+		ereport(LOG,
+				(errmsg("empty password returned by client")));
+		return STATUS_ERROR;
+	}
+
+	if (strlen(passwd) > RADIUS_VECTOR_LENGTH)
+	{
+		ereport(LOG,
+				(errmsg("RADIUS authentication does not support passwords longer than 16 characters")));
+		return STATUS_ERROR;
+	}
+
+	/* Construct RADIUS packet */
+	packet->code = RADIUS_ACCESS_REQUEST;
+	packet->length = RADIUS_HEADER_LENGTH;
+	for (i = 0; i < RADIUS_VECTOR_LENGTH; i++)
+		/* XXX: Generate a more secure random string? */
+		packet->vector[i] = random() % 255;
+	packet->id = packet->vector[0];
+	radius_add_attribute(packet, RADIUS_SERVICE_TYPE, (unsigned char *) &service, sizeof(service));
+	radius_add_attribute(packet, RADIUS_USER_NAME, (unsigned char *) port->user_name, strlen(port->user_name));
+	radius_add_attribute(packet, RADIUS_NAS_IDENTIFIER, (unsigned char *) "postgresql", 9);
+
+	/*
+	 * RADIUS password attributes are calculated as:
+	 * e[0] = p[0] XOR MD5(secret + vector)
+	 */
+	cryptvector = palloc(RADIUS_VECTOR_LENGTH + strlen(port->hba->radiussecret));
+	memcpy(cryptvector, port->hba->radiussecret, strlen(port->hba->radiussecret));
+	memcpy(cryptvector + strlen(port->hba->radiussecret), packet->vector, RADIUS_VECTOR_LENGTH);
+	if (!pg_md5_binary(cryptvector, RADIUS_VECTOR_LENGTH + strlen(port->hba->radiussecret), encryptedpassword))
+	{
+		ereport(LOG,
+				(errmsg("could not perform md5 encryption of password")));
+		pfree(cryptvector);
+		return STATUS_ERROR;
+	}
+	pfree(cryptvector);
+	for (i = 0; i < RADIUS_VECTOR_LENGTH; i++)
+	{
+		if (i < strlen(passwd))
+			encryptedpassword[i] = passwd[i] ^ encryptedpassword[i];
+		else
+			encryptedpassword[i] = '\0' ^ encryptedpassword[i];
+	}
+	radius_add_attribute(packet, RADIUS_PASSWORD, encryptedpassword, RADIUS_VECTOR_LENGTH);
+
+	/* Length need to be in network order on the wire */
+	packetlength = packet->length;
+	packet->length = htons(packet->length);
+
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0)
+	{
+		ereport(LOG,
+				(errmsg("could not create RADIUS socket: %m")));
+		return STATUS_ERROR;
+	}
+
+	memset(&localaddr, 0, sizeof(localaddr));
+	localaddr.sin_family = AF_INET;
+	localaddr.sin_addr.s_addr = INADDR_ANY;
+	if (bind(sock, &localaddr, sizeof(localaddr)))
+	{
+		ereport(LOG,
+				(errmsg("could not bind local RADIUS socket: %m")));
+		closesocket(sock);
+		return STATUS_ERROR;
+	}
+	addrsize = sizeof(localaddr);
+	if (getsockname(sock, &localaddr, &addrsize))
+	{
+		ereport(LOG,
+				(errmsg("could not get local address of RADIUS socket: %m")));
+		closesocket(sock);
+		return STATUS_ERROR;
+	}
+
+	if (sendto(sock, packet, packetlength, 0, &remoteaddr, sizeof(remoteaddr)) < 0)
+	{
+		ereport(LOG,
+				(errmsg("could not send RADIUS packet: %m")));
+		closesocket(sock);
+		return STATUS_ERROR;
+	}
+
+	timeout.tv_sec = RADIUS_TIMEOUT;
+	timeout.tv_usec = 0;
+	FD_ZERO(&fdset);
+	FD_SET(sock, &fdset);
+	while (true)
+	{
+		r = select(sock + 1, &fdset, NULL, NULL, &timeout);
+		if (r < 0)
+		{
+			if (errno == EINTR)
+				continue;
+
+			/* Anything else is an actual error */
+			ereport(LOG,
+					(errmsg("could not check status on RADIUS socket: %m")));
+			closesocket(sock);
+			return STATUS_ERROR;
+		}
+		if (r == 0)
+		{
+			ereport(LOG,
+					(errmsg("timeout waiting for RADIUS response")));
+			closesocket(sock);
+			return STATUS_ERROR;
+		}
+
+		/* else we actually have a packet ready to read */
+		break;
+	}
+
+	/* Read the response packet */
+	addrsize = sizeof(remoteaddr);
+	packetlength = recvfrom(sock, receive_buffer, RADIUS_BUFFER_SIZE, 0, &remoteaddr, &addrsize);
+	if (packetlength < 0)
+	{
+		ereport(LOG,
+				(errmsg("could not read RADIUS response: %m")));
+		closesocket(sock);
+		return STATUS_ERROR;
+	}
+
+	closesocket(sock);
+
+	if (remoteaddr.sin_port != htons(port->hba->radiusport))
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response was sent from incorrect port: %i",
+						ntohs(remoteaddr.sin_port))));
+		return STATUS_ERROR;
+	}
+
+	if (packetlength < RADIUS_HEADER_LENGTH)
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response too short: %i", packetlength)));
+		return STATUS_ERROR;
+	}
+
+	if (packetlength != ntohs(receivepacket->length))
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response has corrupt length: %i (true length %i)",
+						ntohs(receivepacket->length), packetlength)));
+		return STATUS_ERROR;
+	}
+
+	if (packet->id != receivepacket->id)
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response is to a different request: %i (should be %i)",
+						receivepacket->id, packet->id)));
+		return STATUS_ERROR;
+	}
+
+	/*
+	 * Verify the response authenticator, which is calculated as
+	 * MD5(Code+ID+Length+RequestAuthenticator+Attributes+Secret)
+	 */
+	cryptvector = palloc(packetlength + strlen(port->hba->radiussecret));
+
+	memcpy(cryptvector, receivepacket, 4);		/* code+id+length */
+	memcpy(cryptvector+4, packet->vector, RADIUS_VECTOR_LENGTH);	/* request authenticator, from original packet */
+	if (packetlength > RADIUS_HEADER_LENGTH)	/* there may be no attributes at all */
+		memcpy(cryptvector+RADIUS_HEADER_LENGTH, receive_buffer + RADIUS_HEADER_LENGTH, packetlength-RADIUS_HEADER_LENGTH);
+	memcpy(cryptvector+packetlength, port->hba->radiussecret, strlen(port->hba->radiussecret));
+
+	if (!pg_md5_binary(cryptvector,
+					   packetlength + strlen(port->hba->radiussecret),
+					   encryptedpassword))
+	{
+		ereport(LOG,
+				(errmsg("could not perform md5 encryption of received packet")));
+		pfree(cryptvector);
+		return STATUS_ERROR;
+	}
+	pfree(cryptvector);
+
+	if (memcmp(receivepacket->vector, encryptedpassword, RADIUS_VECTOR_LENGTH)  != 0)
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response has incorrect MD5 signature")));
+		return STATUS_ERROR;
+	}
+
+	if (receivepacket->code == RADIUS_ACCESS_ACCEPT)
+		return STATUS_OK;
+	else if (receivepacket->code == RADIUS_ACCESS_REJECT)
+		return STATUS_ERROR;
+	else
+	{
+		ereport(LOG,
+				(errmsg("RADIUS response has invalid code (%i) for user '%s'",
+						receivepacket->code, port->user_name)));
+		return STATUS_ERROR;
+	}
+}
