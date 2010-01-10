@@ -36,6 +36,7 @@
   <productname>Cygwin</productname> uses the normal build system, see
   <xref linkend="installation"> and the specific notes in
   <xref linkend="installation-notes-mingw"> and <xref linkend="installation-notes-cygwin">.
+  These builds cannot generate 64-bit binaries.
   <productname>Cygwin</productname> is not recommended and should
   only be used for older versions of <productname>Windows</productname> where
   the native build does not work, such as 

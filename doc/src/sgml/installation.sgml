@@ -2678,7 +2678,7 @@ cc-1020 cc: ERROR File = pqcomm.c, Line = 427
    </para>
 
    <para>
-    The native Windows port requires a 32-bit version of Windows
+    The native Windows port requires a 32 or 64-bit version of Windows
     2000 or later. Earlier operating systems do
     not have sufficient infrastructure (but Cygwin may be used on
     those).  MinGW, the Unix-like build tools, and MSYS, a collection
