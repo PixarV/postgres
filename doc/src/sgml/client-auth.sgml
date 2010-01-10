@@ -1351,7 +1351,7 @@ ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
     <literal>password</literal> except that it uses RADIUS
     as the password verification method. RADIUS is used only to validate
     the user name/password pairs. Therefore the user must already
-    exist in the database before LDAP can be used for
+    exist in the database before RADIUS can be used for
     authentication.
    </para>
 
@@ -1383,7 +1383,7 @@ ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
        <term><literal>radiussecret</literal></term>
        <listitem>
         <para>
-         The shared secret used when talking securely to the RAIDUS
+         The shared secret used when talking securely to the RADIUS
          server. This must have exactly the same value on the PostgreSQL
          and RADIUS servers. It is recommended that this is a string of
          at least 16 characters. This parameter is required.
