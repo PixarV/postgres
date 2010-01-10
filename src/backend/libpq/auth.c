@@ -2551,7 +2551,7 @@ CheckRADIUSAuth(Port *port)
 	if (port->hba->radiusidentifier && port->hba->radiusidentifier[0])
 		identifier = port->hba->radiusidentifier;
 
-	/* Send password request to client */
+	/* Send regular password request to client, and get the response */
 	sendAuthRequest(port, AUTH_REQ_PASSWORD);
 
 	passwd = recv_password_packet(port);
@@ -2629,6 +2629,7 @@ CheckRADIUSAuth(Port *port)
 		closesocket(sock);
 		return STATUS_ERROR;
 	}
+
 	addrsize = sizeof(localaddr);
 	if (getsockname(sock, (struct sockaddr *) &localaddr, &addrsize))
 	{
