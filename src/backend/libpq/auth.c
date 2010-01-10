@@ -2433,6 +2433,12 @@ CheckCertAuth(Port *port)
  * RADIUS authentication
  *----------------------------------------------------------------
  */
+
+/*
+ * RADIUS authentication is described in RFC2865 (and several
+ * others).
+ */
+
 #define RADIUS_VECTOR_LENGTH 16
 #define RADIUS_HEADER_LENGTH 20
 
@@ -2701,7 +2707,7 @@ CheckRADIUSAuth(Port *port)
 	if (packetlength != ntohs(receivepacket->length))
 	{
 		ereport(LOG,
-				(errmsg("RADIUS response has corrupt length: %i (true length %i)",
+				(errmsg("RADIUS response has corrupt length: %i (actual length %i)",
 						ntohs(receivepacket->length), packetlength)));
 		return STATUS_ERROR;
 	}
