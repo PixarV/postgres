@@ -2630,15 +2630,6 @@ CheckRADIUSAuth(Port *port)
 		return STATUS_ERROR;
 	}
 
-	addrsize = sizeof(localaddr);
-	if (getsockname(sock, (struct sockaddr *) &localaddr, &addrsize))
-	{
-		ereport(LOG,
-				(errmsg("could not get local address of RADIUS socket: %m")));
-		closesocket(sock);
-		return STATUS_ERROR;
-	}
-
 	if (sendto(sock, radius_buffer, packetlength, 0,
 			   (struct sockaddr *) &remoteaddr, sizeof(remoteaddr)) < 0)
 	{
