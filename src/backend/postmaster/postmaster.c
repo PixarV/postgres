@@ -400,7 +400,7 @@ typedef struct
 	Port		port;
 	InheritableSocket portsocket;
 	char		DataDir[MAXPGPATH];
-	int			ListenSocket[MAXLISTEN];
+	pgsocket	ListenSocket[MAXLISTEN];
 	long		MyCancelKey;
 	int			MyPMChildSlot;
 #ifndef WIN32
