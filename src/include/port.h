@@ -20,8 +20,10 @@
 /* socket has a different definition on WIN32 */
 #ifndef WIN32
 typedef int pgsocket;
+#define PGINVALID_SOCKET -1
 #else
 typedef SOCKET pgsocket;
+#define PGINVALID_SOCKET INVALID_SOCKET
 #endif
 
 /* non-blocking */

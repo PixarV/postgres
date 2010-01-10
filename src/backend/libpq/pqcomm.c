@@ -199,9 +199,9 @@ pq_close(int code, Datum arg)
 		 * transport layer reports connection closure, and you can be sure the
 		 * backend has exited.
 		 *
-		 * We do set sock to -1 to prevent any further I/O, though.
+		 * We do set sock to PGINVALID_SOCKET to prevent any further I/O, though.
 		 */
-		MyProcPort->sock = -1;
+		MyProcPort->sock = PGINVALID_SOCKET;
 	}
 }
 
@@ -232,7 +232,7 @@ StreamDoUnlink(int code, Datum arg)
  * StreamServerPort -- open a "listening" port to accept connections.
  *
  * Successfully opened sockets are added to the ListenSocket[] array,
- * at the first position that isn't -1.
+ * at the first position that isn't PGINVALID_SOCKET.
  *
  * RETURNS: STATUS_OK or STATUS_ERROR
  */
@@ -311,7 +311,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		/* See if there is still room to add 1 more socket. */
 		for (; listen_index < MaxListen; listen_index++)
 		{
-			if (ListenSocket[listen_index] == -1)
+			if (ListenSocket[listen_index] == PGINVALID_SOCKET)
 				break;
 		}
 		if (listen_index >= MaxListen)
