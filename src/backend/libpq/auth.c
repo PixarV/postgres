@@ -2623,7 +2623,7 @@ CheckRADIUSAuth(Port *port)
 	memset(&localaddr, 0, sizeof(localaddr));
 	localaddr.sin_family = AF_INET;
 	localaddr.sin_addr.s_addr = INADDR_ANY;
-	if (bind(sock, &localaddr, sizeof(localaddr)))
+	if (bind(sock, (struct sockaddr *) &localaddr, sizeof(localaddr)))
 	{
 		ereport(LOG,
 				(errmsg("could not bind local RADIUS socket: %m")));
@@ -2631,7 +2631,7 @@ CheckRADIUSAuth(Port *port)
 		return STATUS_ERROR;
 	}
 	addrsize = sizeof(localaddr);
-	if (getsockname(sock, &localaddr, &addrsize))
+	if (getsockname(sock, (struct sockaddr *) &localaddr, &addrsize))
 	{
 		ereport(LOG,
 				(errmsg("could not get local address of RADIUS socket: %m")));
@@ -2639,7 +2639,8 @@ CheckRADIUSAuth(Port *port)
 		return STATUS_ERROR;
 	}
 
-	if (sendto(sock, packet, packetlength, 0, &remoteaddr, sizeof(remoteaddr)) < 0)
+	if (sendto(sock, radius_buffer, packetlength, 0,
+			   (struct sockaddr *) &remoteaddr, sizeof(remoteaddr)) < 0)
 	{
 		ereport(LOG,
 				(errmsg("could not send RADIUS packet: %m")));
@@ -2679,7 +2680,8 @@ CheckRADIUSAuth(Port *port)
 
 	/* Read the response packet */
 	addrsize = sizeof(remoteaddr);
-	packetlength = recvfrom(sock, receive_buffer, RADIUS_BUFFER_SIZE, 0, &remoteaddr, &addrsize);
+	packetlength = recvfrom(sock, receive_buffer, RADIUS_BUFFER_SIZE, 0,
+							(struct sockaddr *) &remoteaddr, &addrsize);
 	if (packetlength < 0)
 	{
 		ereport(LOG,
