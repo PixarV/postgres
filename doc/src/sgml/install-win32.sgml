@@ -18,13 +18,24 @@
 
  <para>
   There are several different ways of building PostgreSQL on
-  <productname>Windows</productname>. The complete system can
-  be built using <productname>MinGW</productname>,
-  <productname>Visual C++ 2005</productname>,
-  <productname>Visual C++ 2008</productname> or the
-  <productname>Microsoft Platform SDK</productname>. It can also be
-  built for older versions of <productname>Windows</productname> using
-  <productname>Cygwin</productname>. Finally, the client access library
+  <productname>Windows</productname>. The simplest way to build with
+  Microsoft tools is to intall a modern version of the
+  <productname>Microsoft Platform SDK</productname> and use use the included
+  compiler. It is also possible to build with the full
+  <productname>Microsoft Visual C++ 2005 or 2008</productname>. In some cases
+  that requires the installation of the <productname>Platform SDK</productname>
+  in addition to the compiler.
+ </para>
+
+ <para>
+  It is also possible to build PostgreSQL using the GNU compiler tools
+  provided by <productname>MinGW</productname>, or using
+  <productname>Cygwin</productname> for older versions of
+  <productname>Windows</productname>.
+ </para>
+
+ <para>
+  Finally, the client access library
   (<application>libpq</application>) can be built using
   <productname>Visual C++ 7.1</productname> or 
   <productname>Borland C++</productname> for compatibility with statically
@@ -460,8 +471,8 @@
   if you need a version with different debug/release flags, or if you need a
   static library to link into an application. For normal use the
   <productname>MinGW</productname> or
-  <productname>Visual Studio</productname>/<productname>Platform SDK</productname>
-  method is recommended.
+  <productname>Visual Studio</productname> or
+  <productname>Platform SDK</productname> method is recommended.
  </para>
 
  <para>
