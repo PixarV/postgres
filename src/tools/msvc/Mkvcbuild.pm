@@ -81,6 +81,8 @@ sub mkvcbuild
     $snowball->AddIncludeDir('src\include\snowball');
     $snowball->AddReference($postgres);
 
+    my $walreceiver = $solution->AddProject('walreceiver', 'dll', '', 'src\backend\replication\walreceiver');
+
     my $plpgsql = $solution->AddProject('plpgsql','dll','PLs','src\pl\plpgsql\src');
     $plpgsql->AddFiles('src\pl\plpgsql\src', 'gram.y');
     $plpgsql->AddReference($postgres);
