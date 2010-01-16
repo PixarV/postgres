@@ -81,8 +81,6 @@ sub mkvcbuild
     $snowball->AddIncludeDir('src\include\snowball');
     $snowball->AddReference($postgres);
 
-    my $walreceiver = $solution->AddProject('walreceiver', 'dll', '', 'src\backend\replication\walreceiver');
-
     my $plpgsql = $solution->AddProject('plpgsql','dll','PLs','src\pl\plpgsql\src');
     $plpgsql->AddFiles('src\pl\plpgsql\src', 'gram.y');
     $plpgsql->AddReference($postgres);
@@ -176,6 +174,10 @@ sub mkvcbuild
     $libpq->UseDef('src\interfaces\libpq\libpqdll.def');
     $libpq->ReplaceFile('src\interfaces\libpq\libpqrc.c','src\interfaces\libpq\libpq.rc');
     $libpq->AddReference($libpgport);
+
+    my $walreceiver = $solution->AddProject('walreceiver', 'dll', '', 'src\backend\replication\walreceiver');
+    $walreceiver->AddIncludeDir('src\interfaces\libpq');
+    $walreceiver->AddReference($libpq);
 
     my $pgtypes =
       $solution->AddProject('libpgtypes','dll','interfaces','src\interfaces\ecpg\pgtypeslib');
