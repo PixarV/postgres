@@ -96,11 +96,11 @@ struct PGPROC
 	uint8		vacuumFlags;	/* vacuum-related flags, see above */
 
 	/*
-	 * While in hot standby mode, setting recoveryConflictMode instructs
-	 * the backend to commit suicide. Possible values are the same as those
-	 * passed to ResolveRecoveryConflictWithVirtualXIDs().
+	 * While in hot standby mode, shows that a conflict signal has been sent
+	 * for the current transaction. Set/cleared while holding ProcArrayLock,
+	 * though not required. Accessed without lock, if needed.
 	 */
-	int			recoveryConflictMode;
+	bool		recoveryConflictPending;
 
 	/* Info about LWLock the process is currently waiting for, if any. */
 	bool		lwWaiting;		/* true if waiting for an LW lock */
@@ -152,10 +152,10 @@ typedef struct PROC_HDR
  * ie things that aren't full-fledged backends but need shmem access.
  *
  * Background writer and WAL writer run during normal operation. Startup
- * process also consumes one slot, but WAL writer is launched only after
- * startup has exited, so we only need 2 slots.
+ * process and WAL receiver also consume 2 slots, but WAL writer is
+ * launched only after startup has exited, so we only need 3 slots.
  */
-#define NUM_AUXILIARY_PROCS		2
+#define NUM_AUXILIARY_PROCS		3
 
 
 /* configurable options */

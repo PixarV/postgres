@@ -396,6 +396,8 @@ DATA(insert OID = 191 (  box_right		   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "
 DESCR("is right of");
 DATA(insert OID = 192 (  box_contained	   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "603 603" _null_ _null_ _null_ _null_ box_contained _null_ _null_ _null_ ));
 DESCR("is contained by?");
+DATA(insert OID = 193 (  box_contain_pt	   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "603 600" _null_ _null_ _null_ _null_ box_contain_pt _null_ _null_ _null_ ));
+DESCR("contains?");
 
 /* OIDS 200 - 299 */
 
@@ -3288,6 +3290,11 @@ DESCR("xlog filename, given an xlog location");
 DATA(insert OID = 3810 (  pg_is_in_recovery 	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ pg_is_in_recovery _null_ _null_ _null_ ));
 DESCR("true if server is in recovery");
 
+DATA(insert OID = 3820 ( pg_last_xlog_receive_location	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ pg_last_xlog_receive_location _null_ _null_ _null_ ));
+DESCR("current xlog flush location");
+DATA(insert OID = 3821 ( pg_last_xlog_replay_location	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ pg_last_xlog_replay_location _null_ _null_ _null_ ));
+DESCR("last xlog replay location");
+
 DATA(insert OID = 2621 ( pg_reload_conf			PGNSP PGUID 12 1 0 0 f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ pg_reload_conf _null_ _null_ _null_ ));
 DESCR("reload configuration files");
 DATA(insert OID = 2622 ( pg_rotate_logfile		PGNSP PGUID 12 1 0 0 f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ pg_rotate_logfile _null_ _null_ _null_ ));
@@ -4204,6 +4211,10 @@ DESCR("GiST support");
 DATA(insert OID = 2591 (  gist_circle_consistent PGNSP PGUID 12 1 0 0 f f f t f i 5 0 16 "2281 718 23 26 2281" _null_ _null_ _null_ _null_	gist_circle_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");
 DATA(insert OID = 2592 (  gist_circle_compress	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 2281 "2281" _null_ _null_ _null_ _null_ gist_circle_compress _null_ _null_ _null_ ));
+DESCR("GiST support");
+DATA(insert OID = 1030 (  gist_point_compress	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 2281 "2281" _null_ _null_ _null_ _null_ gist_point_compress _null_ _null_ _null_ ));
+DESCR("GiST support");
+DATA(insert OID = 2179 (  gist_point_consistent	PGNSP PGUID 12 1 0 0 f f f t f i 5 0 16 "2281 603 23 26 2281" _null_ _null_ _null_ _null_	gist_point_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");
 
 /* GIN */

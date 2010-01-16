@@ -21,13 +21,13 @@
 #include <signal.h>
 
 #ifdef HAVE_SIGPROCMASK
-extern sigset_t UnBlockSig,
+extern PGDLLIMPORT sigset_t UnBlockSig,
 			BlockSig,
 			StartupBlockSig;
 
 #define PG_SETMASK(mask)	sigprocmask(SIG_SETMASK, mask, NULL)
 #else /* not HAVE_SIGPROCMASK */
-extern int	UnBlockSig,
+extern PGDLLIMPORT int	UnBlockSig,
 			BlockSig,
 			StartupBlockSig;
 
