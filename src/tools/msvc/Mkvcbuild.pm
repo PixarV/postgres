@@ -177,7 +177,7 @@ sub mkvcbuild
 
     my $walreceiver = $solution->AddProject('walreceiver', 'dll', '', 'src\backend\replication\walreceiver');
     $walreceiver->AddIncludeDir('src\interfaces\libpq');
-    $walreceiver->AddReference($libpq);
+    $walreceiver->AddReference($postgres,$libpq);
 
     my $pgtypes =
       $solution->AddProject('libpgtypes','dll','interfaces','src\interfaces\ecpg\pgtypeslib');
