@@ -103,7 +103,8 @@ typedef struct
 
 typedef struct Port
 {
-	int			sock;			/* File descriptor */
+	pgsocket	sock;			/* File descriptor */
+	bool		noblock;		/* is the socket in non-blocking mode? */
 	ProtocolVersion proto;		/* FE/BE protocol version */
 	SockAddr	laddr;			/* local addr (postmaster) */
 	SockAddr	raddr;			/* remote addr (client) */

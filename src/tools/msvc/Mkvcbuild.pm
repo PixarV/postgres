@@ -28,7 +28,7 @@ my $contrib_defines = {'refint' => 'REFINT_VERBOSE'};
 my @contrib_uselibpq = ('dblink', 'oid2name', 'pgbench', 'vacuumlo');
 my @contrib_uselibpgport = ('oid2name', 'pgbench', 'pg_standby', 'vacuumlo');
 my $contrib_extralibs = {'pgbench' => ['wsock32.lib']};
-my $contrib_extraincludes = {'tsearch2' => ['contrib/tsearch2']};
+my $contrib_extraincludes = {'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend']};
 my $contrib_extrasource = {
     'cube' => ['cubescan.l','cubeparse.y'],
     'seg' => ['segscan.l','segparse.y']
@@ -87,24 +87,31 @@ sub mkvcbuild
 
     if ($solution->{options}->{perl})
     {
+		my $plperlsrc = "src\\pl\\plperl\\";
         my $plperl = $solution->AddProject('plperl','dll','PLs','src\pl\plperl');
         $plperl->AddIncludeDir($solution->{options}->{perl} . '/lib/CORE');
         $plperl->AddDefine('PLPERL_HAVE_UID_GID');
-        if (Solution::IsNewer('src\pl\plperl\SPI.c','src\pl\plperl\SPI.xs'))
-        {
-            print 'Building src\pl\plperl\SPI.c...' . "\n";
-            system( $solution->{options}->{perl}
-                  . '/bin/perl '
-                  . $solution->{options}->{perl}
-                  . '/lib/ExtUtils/xsubpp -typemap '
-                  . $solution->{options}->{perl}
-                  . '/lib/ExtUtils/typemap src\pl\plperl\SPI.xs >src\pl\plperl\SPI.c');
-            if ((!(-f 'src\pl\plperl\SPI.c')) || -z 'src\pl\plperl\SPI.c')
-            {
-                unlink('src\pl\plperl\SPI.c'); # if zero size
-                die 'Failed to create SPI.c' . "\n";
-            }
-        }
+		foreach my $xs ('SPI.xs', 'Util.xs')
+		{
+			(my $xsc = $xs) =~ s/\.xs/.c/;
+			if (Solution::IsNewer("$plperlsrc$xsc","$plperlsrc$xs"))
+			{
+				print "Building $plperlsrc$xsc...\n";
+				system( $solution->{options}->{perl}
+						. '/bin/perl '
+						. $solution->{options}->{perl}
+						. '/lib/ExtUtils/xsubpp -typemap '
+						. $solution->{options}->{perl}
+						. '/lib/ExtUtils/typemap ' 
+						. "$plperlsrc$xs " 
+						. ">$plperlsrc$xsc");
+				if ((!(-f "$plperlsrc$xsc")) || -z "$plperlsrc$xsc")
+				{
+					unlink("$plperlsrc$xsc"); # if zero size
+					die "Failed to create $xsc.\n";
+				}
+			}
+		}
         if (  Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_perlboot.pl')
             ||Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_safe_bad.pl')
             ||Solution::IsNewer('src\pl\plperl\perlchunks.h','src\pl\plperl\plc_safe_ok.pl'))
@@ -117,18 +124,13 @@ sub mkvcbuild
                   . 'text2macro.pl '
                   . '--strip="^(\#.*|\s*)$$" '
                   . 'plc_perlboot.pl plc_safe_bad.pl plc_safe_ok.pl '
-                  .	'>perlchunks.htmp');
+                  .	'>perlchunks.h');
             chdir $basedir;
-            if ((!(-f 'src\pl\plperl\perlchunks.htmp')) || -z 'src\pl\plperl\perlchunks.htmp')
+            if ((!(-f 'src\pl\plperl\perlchunks.h')) || -z 'src\pl\plperl\perlchunks.h')
             {
-                unlink('src\pl\plperl\perlchunks.htmp'); # if zero size
+                unlink('src\pl\plperl\perlchunks.h'); # if zero size
                 die 'Failed to create perlchunks.h' . "\n";
             }
-            else
-            {
-                move('src\pl\plperl\perlchunks.htmp','src\pl\plperl\perlchunks.h');
-            }
-
         }
         $plperl->AddReference($postgres);
 		my @perl_libs = grep {/perl\d+.lib$/ }
@@ -179,6 +181,10 @@ sub mkvcbuild
     $libpq->UseDef('src\interfaces\libpq\libpqdll.def');
     $libpq->ReplaceFile('src\interfaces\libpq\libpqrc.c','src\interfaces\libpq\libpq.rc');
     $libpq->AddReference($libpgport);
+
+    my $libpqwalreceiver = $solution->AddProject('libpqwalreceiver', 'dll', '', 'src\backend\replication\libpqwalreceiver');
+    $libpqwalreceiver->AddIncludeDir('src\interfaces\libpq');
+    $libpqwalreceiver->AddReference($postgres,$libpq);
 
     my $pgtypes =
       $solution->AddProject('libpgtypes','dll','interfaces','src\interfaces\ecpg\pgtypeslib');

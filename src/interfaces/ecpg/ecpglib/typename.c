@@ -98,7 +98,7 @@ ecpg_dynamic_type(Oid type)
 		case NUMERICOID:
 			return SQL3_NUMERIC;	/* numeric */
 		default:
-			return -(int) type;
+			return 0;
 	}
 }
 
@@ -136,7 +136,8 @@ sqlda_dynamic_type(Oid type, enum COMPAT_MODE compat)
 #ifdef HAVE_LONG_INT_64
 			return ECPGt_long;
 #endif
+		/* Unhandled types always return a string */
 		default:
-			return (-type);
+			return ECPGt_char;
 	}
 }

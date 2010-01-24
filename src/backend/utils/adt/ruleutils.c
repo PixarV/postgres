@@ -518,10 +518,9 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 	initStringInfo(&buf);
 
 	tgname = NameStr(trigrec->tgname);
-	appendStringInfo(&buf, "CREATE %sTRIGGER %s",
-					 trigrec->tgisconstraint ? "CONSTRAINT " : "",
+	appendStringInfo(&buf, "CREATE %sTRIGGER %s ",
+					 OidIsValid(trigrec->tgconstraint) ? "CONSTRAINT " : "",
 					 quote_identifier(tgname));
-	appendStringInfoString(&buf, pretty ? "\n    " : " ");
 
 	if (TRIGGER_FOR_BEFORE(trigrec->tgtype))
 		appendStringInfo(&buf, "BEFORE");
@@ -573,33 +572,27 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 			appendStringInfo(&buf, " TRUNCATE");
 		findx++;
 	}
-	appendStringInfo(&buf, " ON %s",
+	appendStringInfo(&buf, " ON %s ",
 					 generate_relation_name(trigrec->tgrelid, NIL));
-	appendStringInfoString(&buf, pretty ? "\n    " : " ");
 
-	if (trigrec->tgisconstraint)
+	if (OidIsValid(trigrec->tgconstraint))
 	{
 		if (OidIsValid(trigrec->tgconstrrelid))
-		{
-			appendStringInfo(&buf, "FROM %s",
+			appendStringInfo(&buf, "FROM %s ",
 							 generate_relation_name(trigrec->tgconstrrelid, NIL));
-			appendStringInfoString(&buf, pretty ? "\n    " : " ");
-		}
 		if (!trigrec->tgdeferrable)
 			appendStringInfo(&buf, "NOT ");
 		appendStringInfo(&buf, "DEFERRABLE INITIALLY ");
 		if (trigrec->tginitdeferred)
-			appendStringInfo(&buf, "DEFERRED");
+			appendStringInfo(&buf, "DEFERRED ");
 		else
-			appendStringInfo(&buf, "IMMEDIATE");
-		appendStringInfoString(&buf, pretty ? "\n    " : " ");
+			appendStringInfo(&buf, "IMMEDIATE ");
 	}
 
 	if (TRIGGER_FOR_ROW(trigrec->tgtype))
-		appendStringInfo(&buf, "FOR EACH ROW");
+		appendStringInfo(&buf, "FOR EACH ROW ");
 	else
-		appendStringInfo(&buf, "FOR EACH STATEMENT");
-	appendStringInfoString(&buf, pretty ? "\n    " : " ");
+		appendStringInfo(&buf, "FOR EACH STATEMENT ");
 
 	/* If the trigger has a WHEN qualification, add that */
 	value = fastgetattr(ht_trig, Anum_pg_trigger_tgqual,
@@ -643,12 +636,12 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 		context.windowClause = NIL;
 		context.windowTList = NIL;
 		context.varprefix = true;
-		context.prettyFlags = pretty ? PRETTYFLAG_PAREN | PRETTYFLAG_INDENT : 0;
+		context.prettyFlags = pretty ? PRETTYFLAG_PAREN : 0;
 		context.indentLevel = PRETTYINDENT_STD;
 
 		get_rule_expr(qual, &context, false);
 
-		appendStringInfo(&buf, ")%s", pretty ? "\n    " : " ");
+		appendStringInfo(&buf, ") ");
 	}
 
 	appendStringInfo(&buf, "EXECUTE PROCEDURE %s(",
@@ -1276,6 +1269,15 @@ pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 
 				break;
 			}
+		case CONSTRAINT_TRIGGER:
+			/*
+			 * There isn't an ALTER TABLE syntax for creating a user-defined
+			 * constraint trigger, but it seems better to print something
+			 * than throw an error; if we throw error then this function
+			 * couldn't safely be applied to all rows of pg_constraint.
+			 */
+			appendStringInfo(&buf, "TRIGGER");
+			break;
 		case CONSTRAINT_EXCLUSION:
 			{
 				Oid		 indexOid = conForm->conindid;

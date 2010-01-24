@@ -1945,22 +1945,13 @@ dbase_redo(XLogRecPtr lsn, XLogRecord *record)
 
 		if (InHotStandby)
 		{
-			VirtualTransactionId *database_users;
-
 			/*
-			 * Find all users connected to this database and ask them
-			 * politely to immediately kill their sessions before processing
-			 * the drop database record, after the usual grace period.
-			 * We don't wait for commit because drop database is
-			 * non-transactional.
+			 * Lock database while we resolve conflicts to ensure that InitPostgres()
+			 * cannot fully re-execute concurrently. This avoids backends re-connecting
+			 * automatically to same database, which can happen in some cases.
 			 */
-		    database_users = GetConflictingVirtualXIDs(InvalidTransactionId,
-													   xlrec->db_id,
-													   false);
-
-			ResolveRecoveryConflictWithVirtualXIDs(database_users,
-												   "drop database",
-												   CONFLICT_MODE_FATAL);
+			LockSharedObjectForSession(DatabaseRelationId, xlrec->db_id, 0, AccessExclusiveLock);
+			ResolveRecoveryConflictWithDatabase(xlrec->db_id);
 		}
 
 		/* Drop pages for this database that are in the shared buffer cache */
@@ -1977,6 +1968,17 @@ dbase_redo(XLogRecPtr lsn, XLogRecord *record)
 			ereport(WARNING,
 					(errmsg("some useless files may be left behind in old database directory \"%s\"",
 							dst_path)));
+
+		if (InHotStandby)
+		{
+			/*
+			 * Release locks prior to commit. XXX There is a race condition here that may allow
+			 * backends to reconnect, but the window for this is small because the gap between
+			 * here and commit is mostly fairly small and it is unlikely that people will be
+			 * dropping databases that we are trying to connect to anyway.
+			 */
+			UnlockSharedObjectForSession(DatabaseRelationId, xlrec->db_id, 0, AccessExclusiveLock);
+		}
 	}
 	else
 		elog(PANIC, "dbase_redo: unknown op code %u", info);

@@ -1101,7 +1101,8 @@ typedef enum AlterTableType
 	AT_DropNotNull,				/* alter column drop not null */
 	AT_SetNotNull,				/* alter column set not null */
 	AT_SetStatistics,			/* alter column set statistics */
-	AT_SetDistinct,				/* alter column set statistics distinct */
+	AT_SetOptions,				/* alter column set ( options ) */
+	AT_ResetOptions,			/* alter column reset ( options ) */
 	AT_SetStorage,				/* alter column set storage */
 	AT_DropColumn,				/* drop column */
 	AT_DropColumnRecurse,		/* internal to commands/tablecmds.c */
@@ -1593,9 +1594,8 @@ typedef struct CreateTrigStmt
 	int16		events;			/* INSERT/UPDATE/DELETE/TRUNCATE */
 	List	   *columns;		/* column names, or NIL for all columns */
 	Node	   *whenClause;		/* qual expression, or NULL if none */
-
-	/* The following are used for constraint triggers (RI and unique checks) */
 	bool		isconstraint;	/* This is a constraint trigger */
+	/* The remaining fields are only used for constraint triggers */
 	bool		deferrable;		/* [NOT] DEFERRABLE */
 	bool		initdeferred;	/* INITIALLY {DEFERRED|IMMEDIATE} */
 	RangeVar   *constrrel;		/* opposite relation, if RI trigger */
@@ -2260,12 +2260,16 @@ typedef struct VacuumStmt
 
 /* ----------------------
  *		Explain Statement
+ *
+ * The "query" field is either a raw parse tree (SelectStmt, InsertStmt, etc)
+ * or a Query node if parse analysis has been done.  Note that rewriting and
+ * planning of the query are always postponed until execution of EXPLAIN.
  * ----------------------
  */
 typedef struct ExplainStmt
 {
 	NodeTag		type;
-	Node	   *query;			/* the query (as a raw parse tree) */
+	Node	   *query;			/* the query (see comments above) */
 	List	   *options;		/* list of DefElem nodes */
 } ExplainStmt;
 

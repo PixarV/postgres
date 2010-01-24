@@ -55,6 +55,7 @@
  *		pq_peekbyte		- peek at next byte from connection
  *		pq_putbytes		- send bytes to connection (not flushed until pq_flush)
  *		pq_flush		- flush pending output
+ *		pq_getbyte_if_available	- get a byte if available without blocking
  *
  * message-level I/O (and old-style-COPY-OUT cruft):
  *		pq_putmessage	- send a normal message (suppressed in COPY OUT mode)
@@ -199,9 +200,9 @@ pq_close(int code, Datum arg)
 		 * transport layer reports connection closure, and you can be sure the
 		 * backend has exited.
 		 *
-		 * We do set sock to -1 to prevent any further I/O, though.
+		 * We do set sock to PGINVALID_SOCKET to prevent any further I/O, though.
 		 */
-		MyProcPort->sock = -1;
+		MyProcPort->sock = PGINVALID_SOCKET;
 	}
 }
 
@@ -232,7 +233,7 @@ StreamDoUnlink(int code, Datum arg)
  * StreamServerPort -- open a "listening" port to accept connections.
  *
  * Successfully opened sockets are added to the ListenSocket[] array,
- * at the first position that isn't -1.
+ * at the first position that isn't PGINVALID_SOCKET.
  *
  * RETURNS: STATUS_OK or STATUS_ERROR
  */
@@ -240,10 +241,10 @@ StreamDoUnlink(int code, Datum arg)
 int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketName,
-				 int ListenSocket[], int MaxListen)
+				 pgsocket ListenSocket[], int MaxListen)
 {
-	int			fd,
-				err;
+	pgsocket	fd;
+	int			err;
 	int			maxconn;
 	int			ret;
 	char		portNumberStr[32];
@@ -311,7 +312,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		/* See if there is still room to add 1 more socket. */
 		for (; listen_index < MaxListen; listen_index++)
 		{
-			if (ListenSocket[listen_index] == -1)
+			if (ListenSocket[listen_index] == PGINVALID_SOCKET)
 				break;
 		}
 		if (listen_index >= MaxListen)
@@ -570,7 +571,7 @@ Setup_AF_UNIX(void)
  * RETURNS: STATUS_OK or STATUS_ERROR
  */
 int
-StreamConnection(int server_fd, Port *port)
+StreamConnection(pgsocket server_fd, Port *port)
 {
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
@@ -676,7 +677,7 @@ StreamConnection(int server_fd, Port *port)
  * we do NOT want to send anything to the far end.
  */
 void
-StreamClose(int sock)
+StreamClose(pgsocket sock)
 {
 	closesocket(sock);
 }
@@ -813,6 +814,56 @@ pq_peekbyte(void)
 			return EOF;			/* Failed to recv data */
 	}
 	return (unsigned char) PqRecvBuffer[PqRecvPointer];
+}
+
+
+/* --------------------------------
+ *		pq_getbyte_if_available	- get a single byte from connection,
+ *			if available
+ *
+ * The received byte is stored in *c. Returns 1 if a byte was read, 0 if
+ * if no data was available, or EOF.
+ * --------------------------------
+ */
+int
+pq_getbyte_if_available(unsigned char *c)
+{
+	int r;
+
+	if (PqRecvPointer < PqRecvLength)
+	{
+		*c = PqRecvBuffer[PqRecvPointer++];
+		return 1;
+	}
+
+	/* Temporarily put the socket into non-blocking mode */
+	if (!pg_set_noblock(MyProcPort->sock))
+		ereport(ERROR,
+				(errmsg("couldn't put socket to non-blocking mode: %m")));
+	MyProcPort->noblock = true;
+	PG_TRY();
+	{
+		r = secure_read(MyProcPort, c, 1);
+	}
+	PG_CATCH();
+	{
+		/*
+		 * The rest of the backend code assumes the socket is in blocking
+		 * mode, so treat failure as FATAL.
+		 */
+		if (!pg_set_block(MyProcPort->sock))
+			ereport(FATAL,
+					(errmsg("couldn't put socket to blocking mode: %m")));
+		MyProcPort->noblock = false;
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	if (!pg_set_block(MyProcPort->sock))
+		ereport(FATAL,
+				(errmsg("couldn't put socket to blocking mode: %m")));
+	MyProcPort->noblock = false;
+
+	return r;
 }
 
 /* --------------------------------

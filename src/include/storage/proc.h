@@ -16,7 +16,7 @@
 
 #include "storage/lock.h"
 #include "storage/pg_sema.h"
-
+#include "utils/timestamp.h"
 
 /*
  * Each backend advertises up to PGPROC_MAX_CACHED_SUBXIDS TransactionIds
@@ -96,11 +96,11 @@ struct PGPROC
 	uint8		vacuumFlags;	/* vacuum-related flags, see above */
 
 	/*
-	 * While in hot standby mode, setting recoveryConflictMode instructs
-	 * the backend to commit suicide. Possible values are the same as those
-	 * passed to ResolveRecoveryConflictWithVirtualXIDs().
+	 * While in hot standby mode, shows that a conflict signal has been sent
+	 * for the current transaction. Set/cleared while holding ProcArrayLock,
+	 * though not required. Accessed without lock, if needed.
 	 */
-	int			recoveryConflictMode;
+	bool		recoveryConflictPending;
 
 	/* Info about LWLock the process is currently waiting for, if any. */
 	bool		lwWaiting;		/* true if waiting for an LW lock */
@@ -145,6 +145,8 @@ typedef struct PROC_HDR
 	/* The proc of the Startup process, since not in ProcArray */
 	PGPROC	   *startupProc;
 	int			startupProcPid;
+	/* Buffer id of the buffer that Startup process waits for pin on */
+	int			startupBufferPinWaitBufId;
 } PROC_HDR;
 
 /*
@@ -152,10 +154,10 @@ typedef struct PROC_HDR
  * ie things that aren't full-fledged backends but need shmem access.
  *
  * Background writer and WAL writer run during normal operation. Startup
- * process also consumes one slot, but WAL writer is launched only after
- * startup has exited, so we only need 2 slots.
+ * process and WAL receiver also consume 2 slots, but WAL writer is
+ * launched only after startup has exited, so we only need 3 slots.
  */
-#define NUM_AUXILIARY_PROCS		2
+#define NUM_AUXILIARY_PROCS		3
 
 
 /* configurable options */
@@ -177,6 +179,8 @@ extern void InitProcessPhase2(void);
 extern void InitAuxiliaryProcess(void);
 
 extern void PublishStartupProcessInformation(void);
+extern void SetStartupBufferPinWaitBufId(int bufid);
+extern int GetStartupBufferPinWaitBufId(void);
 
 extern bool HaveNFreeProcs(int n);
 extern void ProcReleaseLocks(bool isCommit);
@@ -193,5 +197,9 @@ extern void ProcSendSignal(int pid);
 extern bool enable_sig_alarm(int delayms, bool is_statement_timeout);
 extern bool disable_sig_alarm(bool is_statement_timeout);
 extern void handle_sig_alarm(SIGNAL_ARGS);
+
+extern bool enable_standby_sig_alarm(long delay_s, int delay_us, TimestampTz fin_time);
+extern bool disable_standby_sig_alarm(void);
+extern void handle_standby_sig_alarm(SIGNAL_ARGS);
 
 #endif   /* PROC_H */

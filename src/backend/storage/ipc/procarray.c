@@ -135,8 +135,6 @@ static void DisplayXidCache(void);
 #endif   /* XIDCACHE_DEBUG */
 
 /* Primitives for KnownAssignedXids array handling for standby */
-static Size KnownAssignedXidsShmemSize(int size);
-static void KnownAssignedXidsInit(int size);
 static int  KnownAssignedXidsGet(TransactionId *xarray, TransactionId xmax);
 static int	KnownAssignedXidsGetAndSetXmin(TransactionId *xarray, TransactionId *xmin,
 											TransactionId xmax);
@@ -161,16 +159,19 @@ ProcArrayShmemSize(void)
 	size = add_size(size, mul_size(sizeof(PGPROC *), PROCARRAY_MAXPROCS));
 
 	/*
-	 * During recovery processing we have a data structure called KnownAssignedXids,
-	 * created in shared memory. Local data structures are also created in various
-	 * backends during GetSnapshotData(), TransactionIdIsInProgress() and
-	 * GetRunningTransactionData(). All of the main structures created in those
-	 * functions must be identically sized, since we may at times copy the whole
-	 * of the data structures around. We refer to this as TOTAL_MAX_CACHED_SUBXIDS.
+	 * During recovery processing we have a data structure called
+	 * KnownAssignedXids, created in shared memory. Local data structures are
+	 * also created in various backends during GetSnapshotData(),
+	 * TransactionIdIsInProgress() and GetRunningTransactionData(). All of the
+	 * main structures created in those functions must be identically sized,
+	 * since we may at times copy the whole of the data structures around. We
+	 * refer to this size as TOTAL_MAX_CACHED_SUBXIDS.
 	 */
 #define TOTAL_MAX_CACHED_SUBXIDS ((PGPROC_MAX_CACHED_SUBXIDS + 1) * PROCARRAY_MAXPROCS)
 	if (XLogRequestRecoveryConnections)
-		size = add_size(size, KnownAssignedXidsShmemSize(TOTAL_MAX_CACHED_SUBXIDS));
+		size = add_size(size,
+						hash_estimate_size(TOTAL_MAX_CACHED_SUBXIDS,
+										   sizeof(TransactionId)));
 
 	return size;
 }
@@ -186,8 +187,8 @@ CreateSharedProcArray(void)
 	/* Create or attach to the ProcArray shared structure */
 	procArray = (ProcArrayStruct *)
 		ShmemInitStruct("Proc Array",
-							mul_size(sizeof(PGPROC *), PROCARRAY_MAXPROCS),
-							&found);
+						mul_size(sizeof(PGPROC *), PROCARRAY_MAXPROCS),
+						&found);
 
 	if (!found)
 	{
@@ -197,9 +198,28 @@ CreateSharedProcArray(void)
 		/* Normal processing */
 		procArray->numProcs = 0;
 		procArray->maxProcs = PROCARRAY_MAXPROCS;
+		procArray->numKnownAssignedXids = 0;
+		procArray->maxKnownAssignedXids = TOTAL_MAX_CACHED_SUBXIDS;
+		procArray->lastOverflowedXid = InvalidTransactionId;
+	}
 
-		if (XLogRequestRecoveryConnections)
-			KnownAssignedXidsInit(TOTAL_MAX_CACHED_SUBXIDS);
+	if (XLogRequestRecoveryConnections)
+	{
+		/* Create or attach to the KnownAssignedXids hash table */
+		HASHCTL		info;
+
+		MemSet(&info, 0, sizeof(info));
+		info.keysize = sizeof(TransactionId);
+		info.entrysize = sizeof(TransactionId);
+		info.hash = tag_hash;
+
+		KnownAssignedXidsHash = ShmemInitHash("KnownAssignedXids Hash",
+											  TOTAL_MAX_CACHED_SUBXIDS,
+											  TOTAL_MAX_CACHED_SUBXIDS,
+											  &info,
+											  HASH_ELEM | HASH_FUNCTION);
+		if (!KnownAssignedXidsHash)
+			elog(FATAL, "could not initialize known assigned xids hash table");
 	}
 }
 
@@ -324,6 +344,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		/* must be cleared with xid/xmin: */
 		proc->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
 		proc->inCommit = false; /* be sure this is cleared in abort */
+		proc->recoveryConflictPending = false;
 
 		/* Clear the subtransaction-XID cache too while holding the lock */
 		proc->subxids.nxids = 0;
@@ -350,6 +371,7 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 		/* must be cleared with xid/xmin: */
 		proc->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
 		proc->inCommit = false; /* be sure this is cleared in abort */
+		proc->recoveryConflictPending = false;
 
 		Assert(proc->subxids.nxids == 0);
 		Assert(proc->subxids.overflowed == false);
@@ -377,7 +399,7 @@ ProcArrayClearTransaction(PGPROC *proc)
 	proc->xid = InvalidTransactionId;
 	proc->lxid = InvalidLocalTransactionId;
 	proc->xmin = InvalidTransactionId;
-	proc->recoveryConflictMode = 0;
+	proc->recoveryConflictPending = false;
 
 	/* redundant, but just in case */
 	proc->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
@@ -1601,16 +1623,56 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
 /*
  * GetConflictingVirtualXIDs -- returns an array of currently active VXIDs.
  *
- * The array is palloc'd and is terminated with an invalid VXID.
- *
  * Usage is limited to conflict resolution during recovery on standby servers.
  * limitXmin is supplied as either latestRemovedXid, or InvalidTransactionId
  * in cases where we cannot accurately determine a value for latestRemovedXid.
- * If limitXmin is InvalidTransactionId then we know that the very
+ *
+ * If limitXmin is InvalidTransactionId then we are forced to assume that
  * latest xid that might have caused a cleanup record will be
  * latestCompletedXid, so we set limitXmin to be latestCompletedXid instead.
  * We then skip any backends with xmin > limitXmin. This means that
  * cleanup records don't conflict with some recent snapshots.
+ *
+ * The reason for using latestCompletedxid is that we aren't certain which
+ * of the xids in KnownAssignedXids are actually FATAL errors that did
+ * not write abort records. In almost every case they won't be, but we
+ * don't know that for certain. So we need to conflict with all current
+ * snapshots whose xmin is less than latestCompletedXid to be safe. This
+ * causes false positives in our assessment of which vxids conflict.
+ *
+ * By using exclusive lock we prevent new snapshots from being taken while
+ * we work out which snapshots to conflict with. This protects those new
+ * snapshots from also being included in our conflict list. 
+ *
+ * After the lock is released, we allow snapshots again. It is possible
+ * that we arrive at a snapshot that is identical to one that we just
+ * decided we should conflict with. This a case of false positives, not an
+ * actual problem.
+ * 
+ * There are two cases: (1) if we were correct in using latestCompletedXid
+ * then that means that all xids in the snapshot lower than that are FATAL
+ * errors, so not xids that ever commit. We can make no visibility errors
+ * if we allow such xids into the snapshot. (2) if we erred on the side of
+ * caution and in fact the latestRemovedXid should have been earlier than
+ * latestCompletedXid then we conflicted with a snapshot needlessly. Taking
+ * another identical snapshot is OK, because the earlier conflicted
+ * snapshot was a false positive.
+ * 
+ * In either case, a snapshot taken after conflict assessment will still be
+ * valid and non-conflicting even if an identical snapshot that existed
+ * before conflict assessment was assessed as conflicting.
+ * 
+ * If we allowed concurrent snapshots while we were deciding who to
+ * conflict with we would need to include all concurrent snapshotters in
+ * the conflict list as well. We'd have difficulty in working out exactly
+ * who that was, so it is happier for all concerned if we take an exclusive
+ * lock. Notice that we only hold that lock for as long as it takes to
+ * make the conflict list, not for the whole duration of the conflict
+ * resolution.
+ * 
+ * It also means that users waiting for a snapshot is a good thing, since
+ * it is more likely that they will live longer after having waited. So it
+ * is a benefit, not an oversight that we use exclusive lock here.
  *
  * We replace InvalidTransactionId with latestCompletedXid here because
  * this is the most convenient place to do that, while we hold ProcArrayLock.
@@ -1618,15 +1680,13 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
  * latestCompletedXid since doing so would be a performance issue during
  * normal running, so we check it essentially for free on the standby.
  *
- * If dbOid is valid we skip backends attached to other databases. Some
- * callers choose to skipExistingConflicts.
+ * If dbOid is valid we skip backends attached to other databases.
  *
  * Be careful to *not* pfree the result from this function. We reuse
  * this array sufficiently often that we use malloc for the result.
  */
 VirtualTransactionId *
-GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid,
-						  bool skipExistingConflicts)
+GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid)
 {
 	static VirtualTransactionId *vxids;
 	ProcArrayStruct *arrayP = procArray;
@@ -1665,9 +1725,6 @@ GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid,
 		if (proc->pid == 0)
 			continue;
 
-		if (skipExistingConflicts && proc->recoveryConflictMode > 0)
-			continue;
-
 		if (!OidIsValid(dbOid) ||
 			proc->databaseId == dbOid)
 		{
@@ -1704,7 +1761,7 @@ GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid,
  * Returns pid of the process signaled, or 0 if not found.
  */
 pid_t
-CancelVirtualTransaction(VirtualTransactionId vxid, int cancel_mode)
+CancelVirtualTransaction(VirtualTransactionId vxid, ProcSignalReason sigmode)
 {
 	ProcArrayStruct *arrayP = procArray;
 	int			index;
@@ -1722,27 +1779,21 @@ CancelVirtualTransaction(VirtualTransactionId vxid, int cancel_mode)
 		if (procvxid.backendId == vxid.backendId &&
 			procvxid.localTransactionId == vxid.localTransactionId)
 		{
-			/*
-			 * Issue orders for the proc to read next time it receives SIGINT
-			 */
-			if (proc->recoveryConflictMode < cancel_mode)
-				proc->recoveryConflictMode = cancel_mode;
-
+			proc->recoveryConflictPending = true;
 			pid = proc->pid;
+			if (pid != 0)
+			{
+				/*
+				 * Kill the pid if it's still here. If not, that's what we wanted
+				 * so ignore any errors.
+				 */
+				(void) SendProcSignal(pid, sigmode, vxid.backendId);
+			}
 			break;
 		}
 	}
 
 	LWLockRelease(ProcArrayLock);
-
-	if (pid != 0)
-	{
-		/*
-		 * Kill the pid if it's still here. If not, that's what we wanted
-		 * so ignore any errors.
-		 */
-		kill(pid, SIGINT);
-	}
 
 	return pid;
 }
@@ -1824,6 +1875,45 @@ CountDBBackends(Oid databaseid)
 	LWLockRelease(ProcArrayLock);
 
 	return count;
+}
+
+/*
+ * CancelDBBackends --- cancel backends that are using specified database
+ */
+void
+CancelDBBackends(Oid databaseid, ProcSignalReason sigmode, bool conflictPending)
+{
+	ProcArrayStruct *arrayP = procArray;
+	int			index;
+	pid_t		pid = 0;
+
+	/* tell all backends to die */
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+
+	for (index = 0; index < arrayP->numProcs; index++)
+	{
+		volatile PGPROC *proc = arrayP->procs[index];
+
+		if (databaseid == InvalidOid || proc->databaseId == databaseid)
+		{
+			VirtualTransactionId procvxid;
+
+			GET_VXID_FROM_PGPROC(procvxid, *proc);
+
+			proc->recoveryConflictPending = conflictPending;
+			pid = proc->pid;
+			if (pid != 0)
+			{
+				/*
+				 * Kill the pid if it's still here. If not, that's what we wanted
+				 * so ignore any errors.
+				 */
+				(void) SendProcSignal(pid, sigmode, procvxid.backendId);
+			}
+		}
+	}
+
+	LWLockRelease(ProcArrayLock);
 }
 
 /*
@@ -2254,36 +2344,6 @@ ExpireOldKnownAssignedTransactionIds(TransactionId xid)
  * having the standby process changes quickly so that it can provide
  * high availability. So we choose to implement as a hash table.
  */
-
-static Size
-KnownAssignedXidsShmemSize(int size)
-{
-	return hash_estimate_size(size, sizeof(TransactionId));
-}
-
-static void
-KnownAssignedXidsInit(int size)
-{
-	HASHCTL		info;
-
-	/* assume no locking is needed yet */
-
-	info.keysize = sizeof(TransactionId);
-	info.entrysize = sizeof(TransactionId);
-	info.hash = tag_hash;
-
-	KnownAssignedXidsHash = ShmemInitHash("KnownAssignedXids Hash",
-								  size, size,
-								  &info,
-								  HASH_ELEM | HASH_FUNCTION);
-
-	if (!KnownAssignedXidsHash)
-		elog(FATAL, "could not initialize known assigned xids hash table");
-
-	procArray->numKnownAssignedXids = 0;
-	procArray->maxKnownAssignedXids = TOTAL_MAX_CACHED_SUBXIDS;
-	procArray->lastOverflowedXid = InvalidTransactionId;
-}
 
 /*
  * Add xids into KnownAssignedXids.

@@ -32,6 +32,7 @@
 #include "nodes/makefuncs.h"
 #include "postmaster/bgwriter.h"
 #include "postmaster/walwriter.h"
+#include "replication/walreceiver.h"
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -173,7 +174,7 @@ static IndexList *ILHead = NULL;
  *	 AuxiliaryProcessMain
  *
  *	 The main entry point for auxiliary processes, such as the bgwriter,
- *	 walwriter, bootstrapper and the shared memory checker code.
+ *	 walwriter, walreceiver, bootstrapper and the shared memory checker code.
  *
  *	 This code is here just because of historical reasons.
  */
@@ -314,6 +315,9 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			case WalWriterProcess:
 				statmsg = "wal writer process";
 				break;
+			case WalReceiverProcess:
+				statmsg = "wal receiver process";
+				break;
 			default:
 				statmsg = "??? process";
 				break;
@@ -417,6 +421,11 @@ AuxiliaryProcessMain(int argc, char *argv[])
 			/* don't set signals, walwriter has its own agenda */
 			InitXLOGAccess();
 			WalWriterMain();
+			proc_exit(1);		/* should never return */
+
+		case WalReceiverProcess:
+			/* don't set signals, walreceiver has its own agenda */
+			WalReceiverMain();
 			proc_exit(1);		/* should never return */
 
 		default:
@@ -728,7 +737,6 @@ DefineAttr(char *name, char *type, int attnum)
 	}
 
 	attrtypes[attnum]->attstattarget = -1;
-	attrtypes[attnum]->attdistinct = 0;
 	attrtypes[attnum]->attcacheoff = -1;
 	attrtypes[attnum]->atttypmod = -1;
 	attrtypes[attnum]->attislocal = true;

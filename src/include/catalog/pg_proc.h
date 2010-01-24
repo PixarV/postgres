@@ -396,6 +396,8 @@ DATA(insert OID = 191 (  box_right		   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "
 DESCR("is right of");
 DATA(insert OID = 192 (  box_contained	   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "603 603" _null_ _null_ _null_ _null_ box_contained _null_ _null_ _null_ ));
 DESCR("is contained by?");
+DATA(insert OID = 193 (  box_contain_pt	   PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "603 600" _null_ _null_ _null_ _null_ box_contain_pt _null_ _null_ _null_ ));
+DESCR("contains?");
 
 /* OIDS 200 - 299 */
 
@@ -3071,6 +3073,8 @@ DATA(insert OID = 2230 (  pg_stat_clear_snapshot		PGNSP PGUID 12 1 0 0 f f f f f
 DESCR("statistics: discard current transaction's statistics snapshot");
 DATA(insert OID = 2274 (  pg_stat_reset					PGNSP PGUID 12 1 0 0 f f f f f v 0 0 2278 "" _null_ _null_ _null_ _null_	pg_stat_reset _null_ _null_ _null_ ));
 DESCR("statistics: reset collected statistics for current database");
+DATA(insert OID = 3775 (  pg_stat_reset_shared			PGNSP PGUID 12 1 0 0 f f f f f v 1 0 2278 "25" _null_ _null_ _null_ _null_	pg_stat_reset_shared _null_ _null_ _null_ ));
+DESCR("statistics: reset collected statistics shared across the cluster");
 
 DATA(insert OID = 1946 (  encode						PGNSP PGUID 12 1 0 0 f f f t f i 2 0 25 "17 25" _null_ _null_ _null_ _null_ binary_encode _null_ _null_ _null_ ));
 DESCR("convert bytea value into some ascii-only text string");
@@ -3287,6 +3291,11 @@ DESCR("xlog filename, given an xlog location");
 
 DATA(insert OID = 3810 (  pg_is_in_recovery 	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ pg_is_in_recovery _null_ _null_ _null_ ));
 DESCR("true if server is in recovery");
+
+DATA(insert OID = 3820 ( pg_last_xlog_receive_location	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ pg_last_xlog_receive_location _null_ _null_ _null_ ));
+DESCR("current xlog flush location");
+DATA(insert OID = 3821 ( pg_last_xlog_replay_location	PGNSP PGUID 12 1 0 0 f f f t f v 0 0 25 "" _null_ _null_ _null_ _null_ pg_last_xlog_replay_location _null_ _null_ _null_ ));
+DESCR("last xlog replay location");
 
 DATA(insert OID = 2621 ( pg_reload_conf			PGNSP PGUID 12 1 0 0 f f f t f v 0 0 16 "" _null_ _null_ _null_ _null_ pg_reload_conf _null_ _null_ _null_ ));
 DESCR("reload configuration files");
@@ -3695,13 +3704,17 @@ DESCR("total disk space usage for the specified database");
 DATA(insert OID = 2168 ( pg_database_size		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 20 "19" _null_ _null_ _null_ _null_ pg_database_size_name _null_ _null_ _null_ ));
 DESCR("total disk space usage for the specified database");
 DATA(insert OID = 2325 ( pg_relation_size		PGNSP PGUID 14 1 0 0 f f f t f v 1 0 20 "2205" _null_ _null_ _null_ _null_ "select pg_catalog.pg_relation_size($1, ''main'')" _null_ _null_ _null_ ));
-DESCR("disk space usage for the specified table or index");
+DESCR("disk space usage for the main fork of the specified table or index");
 DATA(insert OID = 2332 ( pg_relation_size		PGNSP PGUID 12 1 0 0 f f f t f v 2 0 20 "2205 25" _null_ _null_ _null_ _null_ pg_relation_size _null_ _null_ _null_ ));
 DESCR("disk space usage for the specified fork of a table or index");
-DATA(insert OID = 2286 ( pg_total_relation_size		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 20 "2205" _null_ _null_ _null_ _null_ pg_total_relation_size _null_ _null_ _null_ ));
-DESCR("total disk space usage for the specified table and associated indexes and toast tables");
+DATA(insert OID = 2286 ( pg_total_relation_size	PGNSP PGUID 12 1 0 0 f f f t f v 1 0 20 "2205" _null_ _null_ _null_ _null_ pg_total_relation_size _null_ _null_ _null_ ));
+DESCR("total disk space usage for the specified table and associated indexes");
 DATA(insert OID = 2288 ( pg_size_pretty			PGNSP PGUID 12 1 0 0 f f f t f v 1 0 25 "20" _null_ _null_ _null_ _null_ pg_size_pretty _null_ _null_ _null_ ));
 DESCR("convert a long int to a human readable text using size units");
+DATA(insert OID = 2997 ( pg_table_size			PGNSP PGUID 12 1 0 0 f f f t f v 1 0 20 "2205" _null_ _null_ _null_ _null_ pg_table_size _null_ _null_ _null_ ));
+DESCR("disk space usage for the specified table, including TOAST, free space and visibility map");
+DATA(insert OID = 2998 ( pg_indexes_size		PGNSP PGUID 12 1 0 0 f f f t f v 1 0 20 "2205" _null_ _null_ _null_ _null_ pg_indexes_size _null_ _null_ _null_ ));
+DESCR("disk space usage for all indexes attached to the specified table");
 
 DATA(insert OID = 2316 ( postgresql_fdw_validator PGNSP PGUID 12 1 0 0 f f f t f i 2 0 16 "1009 26" _null_ _null_ _null_ _null_ postgresql_fdw_validator _null_ _null_ _null_));
 
@@ -4204,6 +4217,10 @@ DESCR("GiST support");
 DATA(insert OID = 2591 (  gist_circle_consistent PGNSP PGUID 12 1 0 0 f f f t f i 5 0 16 "2281 718 23 26 2281" _null_ _null_ _null_ _null_	gist_circle_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");
 DATA(insert OID = 2592 (  gist_circle_compress	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 2281 "2281" _null_ _null_ _null_ _null_ gist_circle_compress _null_ _null_ _null_ ));
+DESCR("GiST support");
+DATA(insert OID = 1030 (  gist_point_compress	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 2281 "2281" _null_ _null_ _null_ _null_ gist_point_compress _null_ _null_ _null_ ));
+DESCR("GiST support");
+DATA(insert OID = 2179 (  gist_point_consistent	PGNSP PGUID 12 1 0 0 f f f t f i 5 0 16 "2281 603 23 26 2281" _null_ _null_ _null_ _null_	gist_point_consistent _null_ _null_ _null_ ));
 DESCR("GiST support");
 
 /* GIN */

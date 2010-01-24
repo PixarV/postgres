@@ -1849,17 +1849,20 @@ describeOneTableDetails(const char *schemaname,
 			PQclear(result);
 		}
 
-		/* print triggers (but ignore RI and unique constraint triggers) */
+		/* print triggers (but only user-defined triggers) */
 		if (tableinfo.hastriggers)
 		{
 			printfPQExpBuffer(&buf,
 							  "SELECT t.tgname, "
-							  "pg_catalog.pg_get_triggerdef(t.oid), "
+							  "pg_catalog.pg_get_triggerdef(t.oid%s), "
 							  "t.tgenabled\n"
 							  "FROM pg_catalog.pg_trigger t\n"
 							  "WHERE t.tgrelid = '%s' AND ",
+							  (pset.sversion >= 80500 ? ", true" : ""),
 							  oid);
-			if (pset.sversion >= 80300)
+			if (pset.sversion >= 80500)
+				appendPQExpBuffer(&buf, "NOT t.tgisinternal");
+			else if (pset.sversion >= 80300)
 				appendPQExpBuffer(&buf, "t.tgconstraint = 0");
 			else
 				appendPQExpBuffer(&buf,

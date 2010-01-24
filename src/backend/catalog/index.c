@@ -203,7 +203,6 @@ ConstructTupleDescriptor(Relation heapRelation,
 			to->attnum = i + 1;
 
 			to->attstattarget = -1;
-			to->attdistinct = 0;
 			to->attcacheoff = -1;
 			to->attnotnull = false;
 			to->atthasdef = false;
@@ -825,7 +824,8 @@ index_create(Oid heapRelationId,
 									   -1);
 
 				trigger = makeNode(CreateTrigStmt);
-				trigger->trigname = pstrdup(indexRelationName);
+				trigger->trigname = (isprimary ? "PK_ConstraintTrigger" :
+									 "Unique_ConstraintTrigger");
 				trigger->relation = heapRel;
 				trigger->funcname = SystemFuncName("unique_key_recheck");
 				trigger->args = NIL;
@@ -840,9 +840,7 @@ index_create(Oid heapRelationId,
 				trigger->constrrel = NULL;
 
 				(void) CreateTrigger(trigger, NULL, conOid, indexRelationId,
-									 isprimary ? "PK_ConstraintTrigger" :
-									 "Unique_ConstraintTrigger",
-									 false);
+									 true);
 			}
 		}
 		else
