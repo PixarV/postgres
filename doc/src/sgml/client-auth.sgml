@@ -1361,7 +1361,7 @@ ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
     When using RADIUS authentication, an Access Request message will be sent
     to the configured RADIUS server. This request will be of type
     <literal>Authenticate Only</literal>, and include parameters for
-    <literal>user name</>, <literal>password</>(encrypted) and
+    <literal>user name</>, <literal>password</> (encrypted) and
     <literal>NAS Identifier</>. The request will be encrypted using
     a secret shared with the server. The RADIUS server will respond to
     this server with either <literal>Access Accept</> or
@@ -1389,6 +1389,15 @@ ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
          server. This must have exactly the same value on the PostgreSQL
          and RADIUS servers. It is recommended that this is a string of
          at least 16 characters. This parameter is required.
+         <note>
+         <para>
+          The encryption vector used will only be cryptographically
+          strong if <productname>PostgreSQL</> is built with support for
+          <productname>OpenSSL</>. In other cases, the transmission to the
+          RADIUS server should only be considered obfuscated, not secured, and
+          external security measures should be applied if necessary.
+         </para>
+         </note>
         </para>
        </listitem>
       </varlistentry>
