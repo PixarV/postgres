@@ -931,7 +931,7 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </row>
 
      <row>
-      <entry><literal><function>pg_stat_reset_single_table</function>(oid)</literal></entry>
+      <entry><literal><function>pg_stat_reset_single_table_counters</function>(oid)</literal></entry>
       <entry><type>void</type></entry>
       <entry>
        Reset statistics for a single table or index in the current database to
@@ -940,7 +940,7 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </row>
 
      <row>
-      <entry><literal><function>pg_stat_reset_single_function</function>(oid)</literal></entry>
+      <entry><literal><function>pg_stat_reset_single_function_counters</function>(oid)</literal></entry>
       <entry><type>void</type></entry>
       <entry>
        Reset statistics for a single function in the current database to
