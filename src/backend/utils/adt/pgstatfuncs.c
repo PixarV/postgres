@@ -1127,7 +1127,9 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 Datum
 pg_stat_reset_single_table_counters(PG_FUNCTION_ARGS)
 {
-	pgstat_reset_single_counter(PG_GETARG_OID(0), RESET_TABLE);
+	Oid		taboid = PG_GETARG_OID(0);
+
+	pgstat_reset_single_counter(taboid, RESET_TABLE);
 
 	PG_RETURN_VOID();
 }
@@ -1135,7 +1137,9 @@ pg_stat_reset_single_table_counters(PG_FUNCTION_ARGS)
 Datum
 pg_stat_reset_single_function_counters(PG_FUNCTION_ARGS)
 {
-	pgstat_reset_single_counter(PG_GETARG_OID(0), RESET_FUNCTION);
+	Oid		funcoid = PG_GETARG_OID(0);
+
+	pgstat_reset_single_counter(funcoid, RESET_FUNCTION);
 
 	PG_RETURN_VOID();
 }
