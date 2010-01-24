@@ -2444,17 +2444,17 @@ CheckCertAuth(Port *port)
 
 typedef struct
 {
-	unsigned char	attribute;
-	unsigned char	length;
-	unsigned char	data[1];
+	uint8	attribute;
+	uint8	length;
+	uint8	data[1];
 } radius_attribute;
 
 typedef struct
 {
-	unsigned char	code;
-	unsigned char	id;
-	unsigned short	length;
-	unsigned char	vector[RADIUS_VECTOR_LENGTH];
+	uint8	code;
+	uint8	id;
+	uint16	length;
+	uint8	vector[RADIUS_VECTOR_LENGTH];
 } radius_packet;
 
 /* RADIUS packet types */
@@ -2478,7 +2478,7 @@ typedef struct
 #define RADIUS_TIMEOUT 3
 
 static void
-radius_add_attribute(radius_packet *packet, int type, const unsigned char *data, int len)
+radius_add_attribute(radius_packet *packet, uint8 type, const unsigned char *data, int len)
 {
 	radius_attribute		*attr;
 
@@ -2513,8 +2513,8 @@ CheckRADIUSAuth(Port *port)
 	radius_packet	   *packet = (radius_packet *)radius_buffer;
 	radius_packet	   *receivepacket = (radius_packet *)receive_buffer;
 	int32				service = htonl(RADIUS_AUTHENTICATE_ONLY);
-	unsigned char	   *cryptvector;
-	unsigned char		encryptedpassword[RADIUS_VECTOR_LENGTH];
+	uint8			   *cryptvector;
+	uint8				encryptedpassword[RADIUS_VECTOR_LENGTH];
 	int					packetlength;
 	int					sock;
 	struct sockaddr_in	localaddr;
