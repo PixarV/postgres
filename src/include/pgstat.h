@@ -39,6 +39,7 @@ typedef enum StatMsgType
 	PGSTAT_MTYPE_DROPDB,
 	PGSTAT_MTYPE_RESETCOUNTER,
 	PGSTAT_MTYPE_RESETSHAREDCOUNTER,
+	PGSTAT_MTYPE_RESETSINGLECOUNTER,
 	PGSTAT_MTYPE_AUTOVAC_START,
 	PGSTAT_MTYPE_VACUUM,
 	PGSTAT_MTYPE_ANALYZE,
@@ -279,6 +280,18 @@ typedef struct PgStat_MsgResetsharedcounter
 } PgStat_MsgResetsharedcounter;
 
 /* ----------
+ * PgStat_MsgResetsinglecounter	Sent by the backend to tell the collector
+ *								to reset a single counter
+ * ----------
+ */
+typedef struct PgStat_MsgResetsinglecounter
+{
+	PgStat_MsgHdr m_hdr;
+	Oid			m_databaseid;
+	Oid			m_objectid;
+} PgStat_MsgResetsinglecounter;
+
+/* ----------
  * PgStat_MsgAutovacStart		Sent by the autovacuum daemon to signal
  *								that a database is going to be processed
  * ----------
@@ -432,6 +445,7 @@ typedef union PgStat_Msg
 	PgStat_MsgDropdb msg_dropdb;
 	PgStat_MsgResetcounter msg_resetcounter;
 	PgStat_MsgResetsharedcounter msg_resetsharedcounter;
+	PgStat_MsgResetsinglecounter msg_resetsinglecounter;
 	PgStat_MsgAutovacStart msg_autovacuum;
 	PgStat_MsgVacuum msg_vacuum;
 	PgStat_MsgAnalyze msg_analyze;
@@ -654,6 +668,7 @@ extern void pgstat_drop_database(Oid databaseid);
 extern void pgstat_clear_snapshot(void);
 extern void pgstat_reset_counters(void);
 extern void pgstat_reset_shared_counters(const char *);
+extern void pgstat_reset_single_counter(Oid objectid);
 
 extern void pgstat_report_autovac(Oid dboid);
 extern void pgstat_report_vacuum(Oid tableoid, bool shared, bool adopt_counts,
