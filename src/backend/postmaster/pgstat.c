@@ -1194,7 +1194,7 @@ pgstat_reset_shared_counters(const char *target)
  *	Tell the statistics collector to reset a single counter.
  * ----------
  */
-void pgstat_reset_single_counter(Oid objoid)
+void pgstat_reset_single_counter(Oid objoid, PgStat_Single_Reset_Type type)
 {
 	PgStat_MsgResetsinglecounter msg;
 
@@ -1208,6 +1208,7 @@ void pgstat_reset_single_counter(Oid objoid)
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSINGLECOUNTER);
 	msg.m_databaseid = MyDatabaseId;
+	msg.m_resettype = type;
 	msg.m_objectid = objoid;
 
 	pgstat_send(&msg, sizeof(msg));
@@ -3978,8 +3979,10 @@ pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len)
 
 
 	/* Remove object if it exists, ignore it if not */
-	(void) hash_search(dbentry->tables, (void *) &(msg->m_objectid), HASH_REMOVE, NULL);
-	(void) hash_search(dbentry->functions, (void *)&(msg->m_objectid), HASH_REMOVE, NULL);
+	if (msg->m_resettype == RESET_TABLE)
+		(void) hash_search(dbentry->tables, (void *) &(msg->m_objectid), HASH_REMOVE, NULL);
+	else if (msg->m_resettype == RESET_FUNCTION)
+		(void) hash_search(dbentry->functions, (void *)&(msg->m_objectid), HASH_REMOVE, NULL);
 }
 
 /* ----------

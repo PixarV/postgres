@@ -101,6 +101,12 @@ typedef enum PgStat_Shared_Reset_Target
     RESET_BGWRITER
 } PgStat_Shared_Reset_Target;
 
+/* Possible object types for resetting single counters */
+typedef enum PgStat_Single_Reset_Type
+{
+	RESET_TABLE,
+	RESET_FUNCTION
+} PgStat_Single_Reset_Type;
 
 /* ------------------------------------------------------------
  * Structures kept in backend local memory while accumulating counts
@@ -288,6 +294,7 @@ typedef struct PgStat_MsgResetsinglecounter
 {
 	PgStat_MsgHdr m_hdr;
 	Oid			m_databaseid;
+	PgStat_Single_Reset_Type m_resettype;
 	Oid			m_objectid;
 } PgStat_MsgResetsinglecounter;
 
@@ -668,7 +675,7 @@ extern void pgstat_drop_database(Oid databaseid);
 extern void pgstat_clear_snapshot(void);
 extern void pgstat_reset_counters(void);
 extern void pgstat_reset_shared_counters(const char *);
-extern void pgstat_reset_single_counter(Oid objectid);
+extern void pgstat_reset_single_counter(Oid objectid, PgStat_Single_Reset_Type type);
 
 extern void pgstat_report_autovac(Oid dboid);
 extern void pgstat_report_vacuum(Oid tableoid, bool shared, bool adopt_counts,

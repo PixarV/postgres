@@ -931,11 +931,20 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </row>
 
      <row>
-      <entry><literal><function>pg_stat_reset_single</function>(oid)</literal></entry>
+      <entry><literal><function>pg_stat_reset_single_table</function>(oid)</literal></entry>
       <entry><type>void</type></entry>
       <entry>
-       Reset statistics for a single object (table, index or function) in the
-       current database to zero (requires superuser privileges)
+       Reset statistics for a single table or index in the current database to
+       zero (requires superuser privileges)
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_reset_single_function</function>(oid)</literal></entry>
+      <entry><type>void</type></entry>
+      <entry>
+       Reset statistics for a single function in the current database to
+       zero (requires superuser privileges)
       </entry>
      </row>
     </tbody>

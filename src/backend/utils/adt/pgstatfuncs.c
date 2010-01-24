@@ -79,7 +79,8 @@ extern Datum pg_stat_get_buf_alloc(PG_FUNCTION_ARGS);
 extern Datum pg_stat_clear_snapshot(PG_FUNCTION_ARGS);
 extern Datum pg_stat_reset(PG_FUNCTION_ARGS);
 extern Datum pg_stat_reset_shared(PG_FUNCTION_ARGS);
-extern Datum pg_stat_reset_single(PG_FUNCTION_ARGS);
+extern Datum pg_stat_reset_single_table(PG_FUNCTION_ARGS);
+extern Datum pg_stat_reset_single_function(PG_FUNCTION_ARGS);
 
 /* Global bgwriter statistics, from bgwriter.c */
 extern PgStat_MsgBgWriter bgwriterStats;
@@ -1124,9 +1125,17 @@ pg_stat_reset_shared(PG_FUNCTION_ARGS)
 
 /* Reset a a single counter in the current database */
 Datum
-pg_stat_reset_single(PG_FUNCTION_ARGS)
+pg_stat_reset_single_table(PG_FUNCTION_ARGS)
 {
-	pgstat_reset_single_counter(PG_GETARG_OID(0));
+	pgstat_reset_single_counter(PG_GETARG_OID(0), RESET_TABLE);
+
+	PG_RETURN_VOID();
+}
+
+Datum
+pg_stat_reset_single_function(PG_FUNCTION_ARGS)
+{
+	pgstat_reset_single_counter(PG_GETARG_OID(0), RESET_FUNCTION);
 
 	PG_RETURN_VOID();
 }
