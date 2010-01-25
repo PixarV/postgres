@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <stddef.h>
 
 #include "libpq/auth.h"
 #include "libpq/crypt.h"
@@ -2526,6 +2527,9 @@ CheckRADIUSAuth(Port *port)
 	fd_set				fdset;
 	struct timeval		timeout;
 	int					i,r;
+
+	/* Make sure struct alignment is correct */
+	Assert(offsetof(radius_packet, vector) == 4);
 
 	/* Verify parameters */
 	if (!port->hba->radiusserver || port->hba->radiusserver[0] == '\0')
