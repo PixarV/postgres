@@ -383,8 +383,6 @@ char	   *external_pid_file;
 
 char	   *pgstat_temp_directory;
 
-char	   *default_do_language;
-
 char	   *application_name;
 
 int			tcp_keepalives_idle;
@@ -2604,15 +2602,6 @@ static struct config_string ConfigureNamesString[] =
 #endif   /* USE_SSL */
 
 	{
-		{"default_do_language", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the language used in DO statement if LANGUAGE is not specified."),
-			NULL
-		},
-		&default_do_language,
-		"plpgsql", NULL, NULL
-	},
-
-	{
 		{"application_name", PGC_USERSET, LOGGING,
 		 gettext_noop("Sets the application name to be reported in statistics and logs."),
 		 NULL,
@@ -3904,7 +3893,14 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 	bool		still_dirty;
 	int			i;
 
-	Assert(nestLevel > 0 && nestLevel <= GUCNestLevel);
+	/*
+	 * Note: it's possible to get here with GUCNestLevel == nestLevel-1 during
+	 * abort, if there is a failure during transaction start before
+	 * AtStart_GUC is called.
+	 */
+	Assert(nestLevel > 0 &&
+		   (nestLevel <= GUCNestLevel ||
+			(nestLevel == GUCNestLevel + 1 && !isCommit)));
 
 	/* Quick exit if nothing's changed in this transaction */
 	if (!guc_dirty)
