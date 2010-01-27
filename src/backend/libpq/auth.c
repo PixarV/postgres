@@ -2520,7 +2520,7 @@ CheckRADIUSAuth(Port *port)
 	uint8			   *cryptvector;
 	uint8				encryptedpassword[RADIUS_VECTOR_LENGTH];
 	int					packetlength;
-	int					sock;
+	pgsocket			sock;
 	struct sockaddr_in	localaddr;
 	struct sockaddr_in	remoteaddr;
 	socklen_t			addrsize;
