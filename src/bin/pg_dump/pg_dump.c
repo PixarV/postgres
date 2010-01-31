@@ -3441,6 +3441,7 @@ getTables(int *numTables)
 	int			i_reltablespace;
 	int			i_reloptions;
 	int			i_toastreloptions;
+	int			i_reloftype;
 
 	/* Make sure we are in proper schema */
 	selectSourceSchema("pg_catalog");
@@ -3465,7 +3466,7 @@ getTables(int *numTables)
 	 * we cannot correctly identify inherited columns, owned sequences, etc.
 	 */
 
-	if (g_fout->remoteVersion >= 80400)
+	if (g_fout->remoteVersion >= 80500)
 	{
 		/*
 		 * Left join to pick up dependency info linking sequences to their
@@ -3478,6 +3479,40 @@ getTables(int *numTables)
 						  "c.relchecks, c.relhastriggers, "
 						  "c.relhasindex, c.relhasrules, c.relhasoids, "
 						  "c.relfrozenxid, "
+						  "CASE WHEN c.reloftype <> 0 THEN c.reloftype::pg_catalog.regtype ELSE NULL END AS reloftype, "
+						  "d.refobjid AS owning_tab, "
+						  "d.refobjsubid AS owning_col, "
+						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
+						"array_to_string(c.reloptions, ', ') AS reloptions, "
+						  "array_to_string(array(SELECT 'toast.' || x FROM unnest(tc.reloptions) x), ', ') AS toast_reloptions "
+						  "FROM pg_class c "
+						  "LEFT JOIN pg_depend d ON "
+						  "(c.relkind = '%c' AND "
+						  "d.classid = c.tableoid AND d.objid = c.oid AND "
+						  "d.objsubid = 0 AND "
+						  "d.refclassid = c.tableoid AND d.deptype = 'a') "
+					   "LEFT JOIN pg_class tc ON (c.reltoastrelid = tc.oid) "
+						  "WHERE c.relkind in ('%c', '%c', '%c', '%c') "
+						  "ORDER BY c.oid",
+						  username_subquery,
+						  RELKIND_SEQUENCE,
+						  RELKIND_RELATION, RELKIND_SEQUENCE,
+						  RELKIND_VIEW, RELKIND_COMPOSITE_TYPE);
+	}
+	else if (g_fout->remoteVersion >= 80400)
+	{
+		/*
+		 * Left join to pick up dependency info linking sequences to their
+		 * owning column, if any (note this dependency is AUTO as of 8.2)
+		 */
+		appendPQExpBuffer(query,
+						  "SELECT c.tableoid, c.oid, c.relname, "
+						  "c.relacl, c.relkind, c.relnamespace, "
+						  "(%s c.relowner) AS rolname, "
+						  "c.relchecks, c.relhastriggers, "
+						  "c.relhasindex, c.relhasrules, c.relhasoids, "
+						  "c.relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3510,6 +3545,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3541,6 +3577,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "0 AS relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "(SELECT spcname FROM pg_tablespace t WHERE t.oid = c.reltablespace) AS reltablespace, "
@@ -3572,6 +3609,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "0 AS relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "d.refobjid AS owning_tab, "
 						  "d.refobjsubid AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3599,6 +3637,7 @@ getTables(int *numTables)
 						  "relchecks, (reltriggers <> 0) AS relhastriggers, "
 						  "relhasindex, relhasrules, relhasoids, "
 						  "0 AS relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3621,6 +3660,7 @@ getTables(int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "0 AS relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3653,6 +3693,7 @@ getTables(int *numTables)
 						  "relhasindex, relhasrules, "
 						  "'t'::bool AS relhasoids, "
 						  "0 as relfrozenxid, "
+						  "NULL AS reloftype, "
 						  "NULL::oid AS owning_tab, "
 						  "NULL::int4 AS owning_col, "
 						  "NULL AS reltablespace, "
@@ -3702,6 +3743,7 @@ getTables(int *numTables)
 	i_reltablespace = PQfnumber(res, "reltablespace");
 	i_reloptions = PQfnumber(res, "reloptions");
 	i_toastreloptions = PQfnumber(res, "toast_reloptions");
+	i_reloftype = PQfnumber(res, "reloftype");
 
 	if (lockWaitTimeout && g_fout->remoteVersion >= 70300)
 	{
@@ -3735,6 +3777,10 @@ getTables(int *numTables)
 		tblinfo[i].hastriggers = (strcmp(PQgetvalue(res, i, i_relhastriggers), "t") == 0);
 		tblinfo[i].hasoids = (strcmp(PQgetvalue(res, i, i_relhasoids), "t") == 0);
 		tblinfo[i].frozenxid = atooid(PQgetvalue(res, i, i_relfrozenxid));
+		if (PQgetisnull(res, i, i_reloftype))
+			tblinfo[i].reloftype = NULL;
+		else
+			tblinfo[i].reloftype = strdup(PQgetvalue(res, i, i_reloftype));
 		tblinfo[i].ncheck = atoi(PQgetvalue(res, i, i_relchecks));
 		if (PQgetisnull(res, i, i_owning_tab))
 		{
@@ -5056,7 +5102,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_atttypname;
 	int			i_atttypmod;
 	int			i_attstattarget;
-	int			i_attdistinct;
 	int			i_attstorage;
 	int			i_typstorage;
 	int			i_attnotnull;
@@ -5065,6 +5110,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 	int			i_attlen;
 	int			i_attalign;
 	int			i_attislocal;
+	int			i_attoptions;
 	PGresult   *res;
 	int			ntups;
 	bool		hasdefaults;
@@ -5104,13 +5150,13 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 
 		if (g_fout->remoteVersion >= 80500)
 		{
-			/* attdistinct is new in 8.5 */
+			/* attoptions is new in 8.5 */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, "
-							  "a.attstattarget, a.attdistinct, "
-							  "a.attstorage, t.typstorage, "
+							  "a.attstattarget, a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, a.attisdropped, "
 							  "a.attlen, a.attalign, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
+							"array_to_string(attoptions, ', ') AS attoptions "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
@@ -5122,11 +5168,11 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		{
 			/* need left join here to not fail on dropped columns ... */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, "
-							  "a.attstattarget, 0 AS attdistinct, "
-							  "a.attstorage, t.typstorage, "
+							  "a.attstattarget, a.attstorage, t.typstorage, "
 							  "a.attnotnull, a.atthasdef, a.attisdropped, "
 							  "a.attlen, a.attalign, a.attislocal, "
-				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname "
+				   "pg_catalog.format_type(t.oid,a.atttypmod) AS atttypname, "
+							  "'' AS attoptions "
 			 "FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::pg_catalog.oid "
@@ -5142,12 +5188,12 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			 * explicitly set or was just a default.
 			 */
 			appendPQExpBuffer(q, "SELECT a.attnum, a.attname, a.atttypmod, "
-							  "-1 AS attstattarget, 0 AS attdistinct, "
-							  "a.attstorage, "
+							  "-1 AS attstattarget, a.attstorage, "
 							  "t.typstorage, a.attnotnull, a.atthasdef, "
 							  "false AS attisdropped, a.attlen, "
 							  "a.attalign, false AS attislocal, "
-							  "format_type(t.oid,a.atttypmod) AS atttypname "
+							  "format_type(t.oid,a.atttypmod) AS atttypname, "
+							  "'' AS attoptions "
 							  "FROM pg_attribute a LEFT JOIN pg_type t "
 							  "ON a.atttypid = t.oid "
 							  "WHERE a.attrelid = '%u'::oid "
@@ -5159,12 +5205,13 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		{
 			/* format_type not available before 7.1 */
 			appendPQExpBuffer(q, "SELECT attnum, attname, atttypmod, "
-							  "-1 AS attstattarget, 0 AS attdistinct, "
+							  "-1 AS attstattarget, "
 							  "attstorage, attstorage AS typstorage, "
 							  "attnotnull, atthasdef, false AS attisdropped, "
 							  "attlen, attalign, "
 							  "false AS attislocal, "
-							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname "
+							  "(SELECT typname FROM pg_type WHERE oid = atttypid) AS atttypname, "
+							  "'' AS attoptions "
 							  "FROM pg_attribute a "
 							  "WHERE attrelid = '%u'::oid "
 							  "AND attnum > 0::int2 "
@@ -5182,7 +5229,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_atttypname = PQfnumber(res, "atttypname");
 		i_atttypmod = PQfnumber(res, "atttypmod");
 		i_attstattarget = PQfnumber(res, "attstattarget");
-		i_attdistinct = PQfnumber(res, "attdistinct");
 		i_attstorage = PQfnumber(res, "attstorage");
 		i_typstorage = PQfnumber(res, "typstorage");
 		i_attnotnull = PQfnumber(res, "attnotnull");
@@ -5191,13 +5237,13 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		i_attlen = PQfnumber(res, "attlen");
 		i_attalign = PQfnumber(res, "attalign");
 		i_attislocal = PQfnumber(res, "attislocal");
+		i_attoptions = PQfnumber(res, "attoptions");
 
 		tbinfo->numatts = ntups;
 		tbinfo->attnames = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->atttypnames = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->atttypmod = (int *) malloc(ntups * sizeof(int));
 		tbinfo->attstattarget = (int *) malloc(ntups * sizeof(int));
-		tbinfo->attdistinct = (float4 *) malloc(ntups * sizeof(float4));
 		tbinfo->attstorage = (char *) malloc(ntups * sizeof(char));
 		tbinfo->typstorage = (char *) malloc(ntups * sizeof(char));
 		tbinfo->attisdropped = (bool *) malloc(ntups * sizeof(bool));
@@ -5206,6 +5252,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 		tbinfo->attislocal = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->notnull = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->attrdefs = (AttrDefInfo **) malloc(ntups * sizeof(AttrDefInfo *));
+		tbinfo->attoptions = (char **) malloc(ntups * sizeof(char *));
 		tbinfo->inhAttrs = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhAttrDef = (bool *) malloc(ntups * sizeof(bool));
 		tbinfo->inhNotNull = (bool *) malloc(ntups * sizeof(bool));
@@ -5223,8 +5270,6 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->atttypnames[j] = strdup(PQgetvalue(res, j, i_atttypname));
 			tbinfo->atttypmod[j] = atoi(PQgetvalue(res, j, i_atttypmod));
 			tbinfo->attstattarget[j] = atoi(PQgetvalue(res, j, i_attstattarget));
-			tbinfo->attdistinct[j] = strtod(PQgetvalue(res, j, i_attdistinct),
-											(char **) NULL);
 			tbinfo->attstorage[j] = *(PQgetvalue(res, j, i_attstorage));
 			tbinfo->typstorage[j] = *(PQgetvalue(res, j, i_typstorage));
 			tbinfo->attisdropped[j] = (PQgetvalue(res, j, i_attisdropped)[0] == 't');
@@ -5232,6 +5277,7 @@ getTableAttrs(TableInfo *tblinfo, int numTables)
 			tbinfo->attalign[j] = *(PQgetvalue(res, j, i_attalign));
 			tbinfo->attislocal[j] = (PQgetvalue(res, j, i_attislocal)[0] == 't');
 			tbinfo->notnull[j] = (PQgetvalue(res, j, i_attnotnull)[0] == 't');
+			tbinfo->attoptions[j] = strdup(PQgetvalue(res, j, i_attoptions));
 			tbinfo->attrdefs[j] = NULL; /* fix below */
 			if (PQgetvalue(res, j, i_atthasdef)[0] == 't')
 				hasdefaults = true;
@@ -10552,8 +10598,10 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 		if (binary_upgrade)
 			binary_upgrade_set_relfilenodes(q, tbinfo->dobj.catId.oid, false);
 
-		appendPQExpBuffer(q, "CREATE TABLE %s (",
+		appendPQExpBuffer(q, "CREATE TABLE %s",
 						  fmtId(tbinfo->dobj.name));
+		if (tbinfo->reloftype)
+			appendPQExpBuffer(q, " OF %s", tbinfo->reloftype);
 		actual_atts = 0;
 		for (j = 0; j < tbinfo->numatts; j++)
 		{
@@ -10564,8 +10612,28 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			if ((!tbinfo->inhAttrs[j] && !tbinfo->attisdropped[j]) ||
 				binary_upgrade)
 			{
+				/*
+				 * Default value --- suppress if inherited (except in
+				 * binary-upgrade case, where we're not doing normal
+				 * inheritance) or if it's to be printed separately.
+				 */
+				bool has_default = (tbinfo->attrdefs[j] != NULL
+									&& (!tbinfo->inhAttrDef[j] || binary_upgrade)
+									&& !tbinfo->attrdefs[j]->separate);
+				/*
+				 * Not Null constraint --- suppress if inherited, except
+				 * in binary-upgrade case.
+				 */
+				bool has_notnull =  (tbinfo->notnull[j]
+									 &&	(!tbinfo->inhNotNull[j] || binary_upgrade));
+
+				if (tbinfo->reloftype && !has_default && !has_notnull)
+					continue;
+
 				/* Format properly if not first attr */
-				if (actual_atts > 0)
+				if (actual_atts == 0)
+					appendPQExpBuffer(q, " (");
+				else
 					appendPQExpBuffer(q, ",");
 				appendPQExpBuffer(q, "\n    ");
 				actual_atts++;
@@ -10587,7 +10655,11 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 				}
 
 				/* Attribute type */
-				if (g_fout->remoteVersion >= 70100)
+				if (tbinfo->reloftype)
+				{
+					appendPQExpBuffer(q, "WITH OPTIONS");
+				}
+				else if (g_fout->remoteVersion >= 70100)
 				{
 					appendPQExpBuffer(q, "%s",
 									  tbinfo->atttypnames[j]);
@@ -10600,23 +10672,11 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 												   tbinfo->atttypmod[j]));
 				}
 
-				/*
-				 * Default value --- suppress if inherited (except in
-				 * binary-upgrade case, where we're not doing normal
-				 * inheritance) or if it's to be printed separately.
-				 */
-				if (tbinfo->attrdefs[j] != NULL &&
-					(!tbinfo->inhAttrDef[j] || binary_upgrade) &&
-					!tbinfo->attrdefs[j]->separate)
+				if (has_default)
 					appendPQExpBuffer(q, " DEFAULT %s",
 									  tbinfo->attrdefs[j]->adef_expr);
 
-				/*
-				 * Not Null constraint --- suppress if inherited, except
-				 * in binary-upgrade case.
-				 */
-				if (tbinfo->notnull[j] &&
-					(!tbinfo->inhNotNull[j] || binary_upgrade))
+				if (has_notnull)
 					appendPQExpBuffer(q, " NOT NULL");
 			}
 		}
@@ -10631,7 +10691,9 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			if (constr->separate || !constr->conislocal)
 				continue;
 
-			if (actual_atts > 0)
+			if (actual_atts == 0)
+				appendPQExpBuffer(q, " (\n    ");
+			else
 				appendPQExpBuffer(q, ",\n    ");
 
 			appendPQExpBuffer(q, "CONSTRAINT %s ",
@@ -10641,7 +10703,8 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			actual_atts++;
 		}
 
-		appendPQExpBuffer(q, "\n)");
+		if (actual_atts)
+			appendPQExpBuffer(q, "\n)");
 
 		if (numParents > 0 && !binary_upgrade)
 		{
@@ -10798,22 +10861,6 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 			}
 
 			/*
-			 * Dump per-column ndistinct information. We only issue an ALTER
-			 * TABLE statement if the attdistinct entry for this column is
-			 * non-zero (i.e. it's not the default value)
-			 */
-			if (tbinfo->attdistinct[j] != 0 &&
-				!tbinfo->attisdropped[j])
-			{
-				appendPQExpBuffer(q, "ALTER TABLE ONLY %s ",
-								  fmtId(tbinfo->dobj.name));
-				appendPQExpBuffer(q, "ALTER COLUMN %s ",
-								  fmtId(tbinfo->attnames[j]));
-				appendPQExpBuffer(q, "SET STATISTICS DISTINCT %g;\n",
-								  tbinfo->attdistinct[j]);
-			}
-
-			/*
 			 * Dump per-column storage information.  The statement is only
 			 * dumped if the storage has been changed from the type's default.
 			 */
@@ -10849,6 +10896,19 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					appendPQExpBuffer(q, "SET STORAGE %s;\n",
 									  storage);
 				}
+			}
+
+			/*
+			 * Dump per-column attributes.
+			 */
+			if (tbinfo->attoptions[j] && tbinfo->attoptions[j][0] != '\0')
+			{
+				appendPQExpBuffer(q, "ALTER TABLE ONLY %s ",
+								  fmtId(tbinfo->dobj.name));
+				appendPQExpBuffer(q, "ALTER COLUMN %s ",
+								  fmtId(tbinfo->attnames[j]));
+				appendPQExpBuffer(q, "SET (%s);\n",
+								  tbinfo->attoptions[j]);
 			}
 		}
 	}

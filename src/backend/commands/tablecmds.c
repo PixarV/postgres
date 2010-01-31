@@ -284,10 +284,8 @@ static void ATPrepSetStatistics(Relation rel, const char *colName,
 					Node *newValue);
 static void ATExecSetStatistics(Relation rel, const char *colName,
 					Node *newValue);
-static void ATPrepSetDistinct(Relation rel, const char *colName,
-					Node *newValue);
-static void ATExecSetDistinct(Relation rel, const char *colName,
-				 Node *newValue);
+static void ATExecSetOptions(Relation rel, const char *colName,
+				 Node *options, bool isReset);
 static void ATExecSetStorage(Relation rel, const char *colName,
 				 Node *newValue);
 static void ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
@@ -363,6 +361,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 	ListCell   *listptr;
 	AttrNumber	attnum;
 	static char *validnsps[] = HEAP_RELOPT_NAMESPACES;
+	Oid			ofTypeId;
 
 	/*
 	 * Truncate relname to appropriate length (probably a waste of time, as
@@ -445,6 +444,11 @@ DefineRelation(CreateStmt *stmt, char relkind)
 
 	(void) heap_reloptions(relkind, reloptions, true);
 
+	if (stmt->ofTypename)
+		ofTypeId = typenameTypeId(NULL, stmt->ofTypename, NULL);
+	else
+		ofTypeId = InvalidOid;
+
 	/*
 	 * Look up inheritance ancestors and generate relation schema, including
 	 * inherited attributes.
@@ -523,6 +527,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  tablespaceId,
 										  InvalidOid,
 										  InvalidOid,
+										  ofTypeId,
 										  GetUserId(),
 										  descriptor,
 										  list_concat(cookedDefaults,
@@ -1232,17 +1237,46 @@ MergeAttributes(List *schema, List *supers, bool istemp,
 	foreach(entry, schema)
 	{
 		ColumnDef  *coldef = lfirst(entry);
-		ListCell   *rest;
+		ListCell   *rest = lnext(entry);
+		ListCell   *prev = entry;
 
-		for_each_cell(rest, lnext(entry))
+		if (coldef->typeName == NULL)
+			/*
+			 * Typed table column option that does not belong to a
+			 * column from the type.  This works because the columns
+			 * from the type come first in the list.
+			 */
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_COLUMN),
+					 errmsg("column \"%s\" does not exist",
+							coldef->colname)));
+
+		while (rest != NULL)
 		{
 			ColumnDef  *restdef = lfirst(rest);
+			ListCell   *next = lnext(rest); /* need to save it in case we delete it */
 
 			if (strcmp(coldef->colname, restdef->colname) == 0)
-				ereport(ERROR,
-						(errcode(ERRCODE_DUPLICATE_COLUMN),
-						 errmsg("column \"%s\" specified more than once",
-								coldef->colname)));
+			{
+				if (coldef->is_from_type)
+				{
+					/* merge the column options into the column from
+					 * the type */
+					coldef->is_not_null = restdef->is_not_null;
+					coldef->raw_default = restdef->raw_default;
+					coldef->cooked_default = restdef->cooked_default;
+					coldef->constraints = restdef->constraints;
+					coldef->is_from_type = false;
+					list_delete_cell(schema, rest, prev);
+				}
+				else
+					ereport(ERROR,
+							(errcode(ERRCODE_DUPLICATE_COLUMN),
+							 errmsg("column \"%s\" specified more than once",
+									coldef->colname)));
+			}
+			prev = rest;
+			rest = next;
 		}
 	}
 
@@ -1923,6 +1957,11 @@ renameatt(Oid myrelid,
 	 */
 	targetrelation = relation_open(myrelid, AccessExclusiveLock);
 
+	if (targetrelation->rd_rel->reloftype)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("cannot rename column of typed table")));
+
 	/*
 	 * permissions checking.  this would normally be done in utility.c, but
 	 * this particular routine is recursive.
@@ -2425,10 +2464,10 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			ATPrepSetStatistics(rel, cmd->name, cmd->def);
 			pass = AT_PASS_COL_ATTRS;
 			break;
-		case AT_SetDistinct:	/* ALTER COLUMN SET STATISTICS DISTINCT */
-			ATSimpleRecursion(wqueue, rel, cmd, recurse);
-			/* Performs own permission checks */
-			ATPrepSetDistinct(rel, cmd->name, cmd->def);
+		case AT_SetOptions:		/* ALTER COLUMN SET ( options ) */
+		case AT_ResetOptions:	/* ALTER COLUMN RESET ( options ) */
+			ATSimplePermissionsRelationOrIndex(rel);
+			/* This command never recurses */
 			pass = AT_PASS_COL_ATTRS;
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
@@ -2644,8 +2683,11 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 		case AT_SetStatistics:	/* ALTER COLUMN SET STATISTICS */
 			ATExecSetStatistics(rel, cmd->name, cmd->def);
 			break;
-		case AT_SetDistinct:	/* ALTER COLUMN SET STATISTICS DISTINCT */
-			ATExecSetDistinct(rel, cmd->name, cmd->def);
+		case AT_SetOptions:		/* ALTER COLUMN SET ( options ) */
+			ATExecSetOptions(rel, cmd->name, cmd->def, false);
+			break;
+		case AT_ResetOptions:	/* ALTER COLUMN RESET ( options ) */
+			ATExecSetOptions(rel, cmd->name, cmd->def, true);
 			break;
 		case AT_SetStorage:		/* ALTER COLUMN SET STORAGE */
 			ATExecSetStorage(rel, cmd->name, cmd->def);
@@ -2997,7 +3039,8 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 	 * Prepare a BulkInsertState and options for heap_insert. Because
 	 * we're building a new heap, we can skip WAL-logging and fsync it
 	 * to disk at the end instead (unless WAL-logging is required for
-	 * archiving). The FSM is empty too, so don't bother using it.
+	 * archiving or streaming replication). The FSM is empty too,
+	 * so don't bother using it.
 	 */
 	if (newrel)
 	{
@@ -3005,7 +3048,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 		bistate = GetBulkInsertState();
 
 		hi_options = HEAP_INSERT_SKIP_FSM;
-		if (!XLogArchivingActive())
+		if (!XLogIsNeeded())
 			hi_options |= HEAP_INSERT_SKIP_WAL;
 	}
 	else
@@ -3584,6 +3627,11 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	Form_pg_type tform;
 	Expr	   *defval;
 
+	if (rel->rd_rel->reloftype)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("cannot add column to typed table")));
+
 	attrdesc = heap_open(AttributeRelationId, RowExclusiveLock);
 
 	/*
@@ -3682,7 +3730,6 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	namestrcpy(&(attribute.attname), colDef->colname);
 	attribute.atttypid = typeOid;
 	attribute.attstattarget = (newattnum > 0) ? -1 : 0;
-	attribute.attdistinct = 0;
 	attribute.attlen = tform->typlen;
 	attribute.attcacheoff = -1;
 	attribute.atttypmod = typmod;
@@ -4151,68 +4198,24 @@ ATExecSetStatistics(Relation rel, const char *colName, Node *newValue)
 	heap_close(attrelation, RowExclusiveLock);
 }
 
-/*
- * ALTER TABLE ALTER COLUMN SET STATISTICS DISTINCT
- */
 static void
-ATPrepSetDistinct(Relation rel, const char *colName, Node *newValue)
+ATExecSetOptions(Relation rel, const char *colName, Node *options,
+				 bool isReset)
 {
-	/*
-	 * We do our own permission checking because (a) we want to allow SET
-	 * DISTINCT on indexes (for expressional index columns), and (b) we want
-	 * to allow SET DISTINCT on system catalogs without requiring
-	 * allowSystemTableMods to be turned on.
-	 */
-	if (rel->rd_rel->relkind != RELKIND_RELATION &&
-		rel->rd_rel->relkind != RELKIND_INDEX)
-		ereport(ERROR,
-				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-				 errmsg("\"%s\" is not a table or index",
-						RelationGetRelationName(rel))));
-
-	/* Permissions checks */
-	if (!pg_class_ownercheck(RelationGetRelid(rel), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
-					   RelationGetRelationName(rel));
-}
-
-static void
-ATExecSetDistinct(Relation rel, const char *colName, Node *newValue)
-{
-	float4		newdistinct;
 	Relation	attrelation;
-	HeapTuple	tuple;
+	HeapTuple	tuple,
+				newtuple;
 	Form_pg_attribute attrtuple;
-
-	switch (nodeTag(newValue))
-	{
-		case T_Integer:
-			newdistinct = intVal(newValue);
-			break;
-		case T_Float:
-			newdistinct = floatVal(newValue);
-			break;
-		default:
-			elog(ERROR, "unrecognized node type: %d",
-				 (int) nodeTag(newValue));
-			newdistinct = 0;	/* keep compiler quiet */
-			break;
-	}
-
-	/*
-	 * Limit ndistinct to sane values
-	 */
-	if (newdistinct < -1.0)
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("number of distinct values %g is too low",
-						newdistinct)));
-	}
+	Datum		datum,
+				newOptions;
+	bool		isnull;
+	Datum		repl_val[Natts_pg_attribute];
+	bool		repl_null[Natts_pg_attribute];
+	bool		repl_repl[Natts_pg_attribute];
 
 	attrelation = heap_open(AttributeRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
+	tuple = SearchSysCacheAttName(RelationGetRelid(rel), colName);
 
 	if (!HeapTupleIsValid(tuple))
 		ereport(ERROR,
@@ -4227,14 +4230,32 @@ ATExecSetDistinct(Relation rel, const char *colName, Node *newValue)
 				 errmsg("cannot alter system column \"%s\"",
 						colName)));
 
-	attrtuple->attdistinct = newdistinct;
+	/* Generate new proposed attoptions (text array) */
+	Assert(IsA(options, List));
+	datum = SysCacheGetAttr(ATTNAME, tuple, Anum_pg_attribute_attoptions,
+		&isnull);
+	newOptions = transformRelOptions(isnull ? (Datum) 0 : datum,
+									 (List *) options, NULL, NULL, false,
+									 isReset);
+	/* Validate new options */
+	(void) attribute_reloptions(newOptions, true);
 
-	simple_heap_update(attrelation, &tuple->t_self, tuple);
+	/* Build new tuple. */
+	memset(repl_null, false, sizeof(repl_null));
+	memset(repl_repl, false, sizeof(repl_repl));
+	if (newOptions != (Datum) 0)
+		repl_val[Anum_pg_attribute_attoptions - 1] = newOptions;
+	else
+		repl_null[Anum_pg_attribute_attoptions - 1] = true;
+	repl_repl[Anum_pg_attribute_attoptions - 1] = true;
+	newtuple = heap_modify_tuple(tuple, RelationGetDescr(attrelation),
+								 repl_val, repl_null, repl_repl);
+	ReleaseSysCache(tuple);
 
-	/* keep system catalog indexes current */
-	CatalogUpdateIndexes(attrelation, tuple);
-
-	heap_freetuple(tuple);
+	/* Update system catalog. */
+	simple_heap_update(attrelation, &newtuple->t_self, newtuple);
+	CatalogUpdateIndexes(attrelation, newtuple);
+	heap_freetuple(newtuple);
 
 	heap_close(attrelation, RowExclusiveLock);
 }
@@ -4331,6 +4352,11 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 	AttrNumber	attnum;
 	List	   *children;
 	ObjectAddress object;
+
+	if (rel->rd_rel->reloftype)
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("cannot drop column from typed table")));
 
 	/* At top level, permission check was done in ATPrepCmd, else do it */
 	if (recursing)
@@ -7015,6 +7041,19 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace)
 
 	heap_close(pg_class, RowExclusiveLock);
 
+	/*
+	 * Write an XLOG UNLOGGED record if WAL-logging was skipped because
+	 * WAL archiving is not enabled.
+	 */
+	if (!XLogIsNeeded() && !rel->rd_istemp)
+	{
+		char reason[NAMEDATALEN + 40];
+		snprintf(reason, sizeof(reason), "ALTER TABLE SET TABLESPACE on \"%s\"",
+				 RelationGetRelationName(rel));
+
+		XLogReportUnloggedStatement(reason);
+	}
+
 	relation_close(rel, NoLock);
 
 	/* Make sure the reltablespace change is visible */
@@ -7043,6 +7082,10 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 	/*
 	 * We need to log the copied data in WAL iff WAL archiving/streaming is
 	 * enabled AND it's not a temp rel.
+	 *
+	 * Note: If you change the conditions here, update the conditions in
+	 * ATExecSetTableSpace() for when an XLOG UNLOGGED record is written
+	 * to match.
 	 */
 	use_wal = XLogIsNeeded() && !istemp;
 

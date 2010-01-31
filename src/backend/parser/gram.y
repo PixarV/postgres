@@ -277,6 +277,7 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <list>	stmtblock stmtmulti
 				OptTableElementList TableElementList OptInherit definition
+				OptTypedTableElementList TypedTableElementList
 				reloptions opt_reloptions
 				OptWith opt_distinct opt_definition func_args func_args_list
 				func_args_with_defaults func_args_with_defaults_list
@@ -347,8 +348,8 @@ static TypeName *TableFuncTypeName(List *columns);
 
 %type <vsetstmt> set_rest SetResetClause
 
-%type <node>	TableElement ConstraintElem TableFuncElement
-%type <node>	columnDef
+%type <node>	TableElement TypedTableElement ConstraintElem TableFuncElement
+%type <node>	columnDef columnOptions
 %type <defelt>	def_elem reloption_elem old_aggr_elem
 %type <node>	def_arg columnElem where_clause where_or_current_clause
 				a_expr b_expr c_expr func_expr AexprConst indirection_el
@@ -1645,13 +1646,22 @@ alter_table_cmd:
 					n->def = (Node *) makeInteger($6);
 					$$ = (Node *)n;
 				}
-			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET STATISTICS DISTINCT <NumericOnly> */
-			| ALTER opt_column ColId SET STATISTICS DISTINCT NumericOnly
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET ( column_parameter = value [, ... ] ) */
+			| ALTER opt_column ColId SET reloptions
 				{
 					AlterTableCmd *n = makeNode(AlterTableCmd);
-					n->subtype = AT_SetDistinct;
+					n->subtype = AT_SetOptions;
 					n->name = $3;
-					n->def = (Node *) $7;
+					n->def = (Node *) $5;
+					$$ = (Node *)n;
+				}
+			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET ( column_parameter = value [, ... ] ) */
+			| ALTER opt_column ColId RESET reloptions
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_ResetOptions;
+					n->name = $3;
+					n->def = (Node *) $5;
 					$$ = (Node *)n;
 				}
 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET STORAGE <storagemode> */
@@ -2194,21 +2204,19 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->tablespacename = $11;
 					$$ = (Node *)n;
 				}
-		| CREATE OptTemp TABLE qualified_name OF qualified_name
-			'(' OptTableElementList ')' OptWith OnCommitOption OptTableSpace
+		| CREATE OptTemp TABLE qualified_name OF any_name
+			OptTypedTableElementList OptWith OnCommitOption OptTableSpace
 				{
-					/* SQL99 CREATE TABLE OF <UDT> (cols) seems to be satisfied
-					 * by our inheritance capabilities. Let's try it...
-					 */
 					CreateStmt *n = makeNode(CreateStmt);
 					$4->istemp = $2;
 					n->relation = $4;
-					n->tableElts = $8;
-					n->inhRelations = list_make1($6);
+					n->tableElts = $7;
+					n->ofTypename = makeTypeNameFromNameList($6);
+					n->ofTypename->location = @6;
 					n->constraints = NIL;
-					n->options = $10;
-					n->oncommit = $11;
-					n->tablespacename = $12;
+					n->options = $8;
+					n->oncommit = $9;
+					n->tablespacename = $10;
 					$$ = (Node *)n;
 				}
 		;
@@ -2234,6 +2242,11 @@ OptTableElementList:
 			| /*EMPTY*/							{ $$ = NIL; }
 		;
 
+OptTypedTableElementList:
+			'(' TypedTableElementList ')'		{ $$ = $2; }
+			| /*EMPTY*/							{ $$ = NIL; }
+		;
+
 TableElementList:
 			TableElement
 				{
@@ -2245,9 +2258,25 @@ TableElementList:
 				}
 		;
 
+TypedTableElementList:
+			TypedTableElement
+				{
+					$$ = list_make1($1);
+				}
+			| TypedTableElementList ',' TypedTableElement
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
 TableElement:
 			columnDef							{ $$ = $1; }
 			| TableLikeClause					{ $$ = $1; }
+			| TableConstraint					{ $$ = $1; }
+		;
+
+TypedTableElement:
+			columnOptions						{ $$ = $1; }
 			| TableConstraint					{ $$ = $1; }
 		;
 
@@ -2257,6 +2286,16 @@ columnDef:	ColId Typename ColQualList
 					n->colname = $1;
 					n->typeName = $2;
 					n->constraints = $3;
+					n->is_local = true;
+					$$ = (Node *)n;
+				}
+		;
+
+columnOptions:	ColId WITH OPTIONS ColQualList
+				{
+					ColumnDef *n = makeNode(ColumnDef);
+					n->colname = $1;
+					n->constraints = $4;
 					n->is_local = true;
 					$$ = (Node *)n;
 				}
@@ -9577,9 +9616,9 @@ func_expr:	func_name '(' ')' over_clause
 			| OVERLAY '(' overlay_list ')'
 				{
 					/* overlay(A PLACING B FROM C FOR D) is converted to
-					 * substring(A, 1, C-1) || B || substring(A, C+1, C+D)
+					 * overlay(A, B, C, D)
 					 * overlay(A PLACING B FROM C) is converted to
-					 * substring(A, 1, C-1) || B || substring(A, C+1, C+char_length(B))
+					 * overlay(A, B, C)
 					 */
 					FuncCall *n = makeNode(FuncCall);
 					n->funcname = SystemFuncName("overlay");
@@ -10141,6 +10180,7 @@ extract_arg:
  * SQL99 defines the OVERLAY() function:
  * o overlay(text placing text from int for int)
  * o overlay(text placing text from int)
+ * and similarly for binary strings
  */
 overlay_list:
 			a_expr overlay_placing substr_from substr_for

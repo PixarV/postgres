@@ -720,6 +720,7 @@ make_new_heap(Oid OIDOldHeap, const char *NewName, Oid NewTableSpace)
 										  NewTableSpace,
 										  InvalidOid,
 										  InvalidOid,
+										  InvalidOid,
 										  OldHeap->rd_rel->relowner,
 										  tupdesc,
 										  NIL,
@@ -820,6 +821,18 @@ copy_heap_data(Oid OIDNewHeap, Oid OIDOldHeap, Oid OIDOldIndex,
 	 * is enabled AND it's not a temp rel.
 	 */
 	use_wal = XLogIsNeeded() && !NewHeap->rd_istemp;
+
+	/*
+	 * Write an XLOG UNLOGGED record if WAL-logging was skipped because
+	 * WAL archiving is not enabled.
+	 */
+	if (!use_wal && !NewHeap->rd_istemp)
+	{
+		char reason[NAMEDATALEN + 20];
+		snprintf(reason, sizeof(reason), "CLUSTER on \"%s\"",
+				 RelationGetRelationName(NewHeap));
+		XLogReportUnloggedStatement(reason);
+	}
 
 	/* use_wal off requires rd_targblock be initially invalid */
 	Assert(NewHeap->rd_targblock == InvalidBlockNumber);

@@ -395,6 +395,16 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
        </varlistentry>
 
        <varlistentry>
+        <term><literal>radius</></term>
+        <listitem>
+         <para>
+          Authenticate using a RADIUS server. See <xref
+          linkend="auth-radius"> for details.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
         <term><literal>cert</></term>
         <listitem>
          <para>
@@ -492,31 +502,31 @@ hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable> 
 # any database user name using Unix-domain sockets (the default for local
 # connections).
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-local   all         all                               trust
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+local   all             all                                     trust
 
 # The same using local loopback TCP/IP connections.
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-host    all         all         127.0.0.1/32          trust
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+host    all             all             127.0.0.1/32            trust
 
 # The same as the previous line, but using a separate netmask column
 #
-# TYPE  DATABASE    USER        IP-ADDRESS    IP-MASK             METHOD
-host    all         all         127.0.0.1     255.255.255.255     trust
+# TYPE  DATABASE        USER            IP-ADDRESS      IP-MASK             METHOD
+host    all             all             127.0.0.1       255.255.255.255     trust
 
 # Allow any user from any host with IP address 192.168.93.x to connect
 # to database "postgres" as the same user name that ident reports for
 # the connection (typically the Unix user name).
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-host    postgres    all         192.168.93.0/24       ident
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+host    postgres        all             192.168.93.0/24         ident
 
 # Allow any user from host 192.168.12.10 to connect to database
 # "postgres" if the user's password is correctly supplied.
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-host    postgres    all         192.168.12.10/32      md5
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+host    postgres        all             192.168.12.10/32        md5
 
 # In the absence of preceding "host" lines, these two lines will
 # reject all connections from 192.168.54.1 (since that entry will be
@@ -524,9 +534,9 @@ host    postgres    all         192.168.12.10/32      md5
 # on the Internet.  The zero mask means that no bits of the host IP
 # address are considered so it matches any host.
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-host    all         all         192.168.54.1/32       reject
-host    all         all         0.0.0.0/0             krb5
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+host    all             all             192.168.54.1/32         reject
+host    all             all             0.0.0.0/0               krb5
 
 # Allow users from 192.168.x.x hosts to connect to any database, if
 # they pass the ident check.  If, for example, ident says the user is
@@ -534,8 +544,8 @@ host    all         all         0.0.0.0/0             krb5
 # connection is allowed if there is an entry in pg_ident.conf for map
 # "omicron" that says "bryanh" is allowed to connect as "guest1".
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-host    all         all         192.168.0.0/16        ident map=omicron
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+host    all             all             192.168.0.0/16          ident map=omicron
 
 # If these are the only three lines for local connections, they will
 # allow local users to connect only to their own databases (databases
@@ -544,16 +554,16 @@ host    all         all         192.168.0.0/16        ident map=omicron
 # $PGDATA/admins contains a list of names of administrators.  Passwords
 # are required in all cases.
 #
-# TYPE  DATABASE    USER        CIDR-ADDRESS          METHOD
-local   sameuser    all                               md5
-local   all         @admins                           md5
-local   all         +support                          md5
+# TYPE  DATABASE        USER            CIDR-ADDRESS            METHOD
+local   sameuser        all                                     md5
+local   all             @admins                                 md5
+local   all             +support                                md5
 
 # The last two lines above can be combined into a single line:
-local   all         @admins,+support                  md5
+local   all             @admins,+support                        md5
 
 # The database column can also use lists and file names:
-local   db1,db2,@demodbs  all                         md5
+local   db1,db2,@demodbs  all                                   md5
 </programlisting>
    </example>
  </sect1>
@@ -668,14 +678,14 @@ mymap   /^(.*)@otherdomain\.com$   guest
   <example id="example-pg-ident.conf">
    <title>An example <filename>pg_ident.conf</> file</title>
 <programlisting>
-# MAPNAME     SYSTEM-USERNAME   PG-USERNAME
+# MAPNAME       SYSTEM-USERNAME         PG-USERNAME
 
-omicron       bryanh            bryanh
-omicron       ann               ann
+omicron         bryanh                  bryanh
+omicron         ann                     ann
 # bob has user name robert on these machines
-omicron       robert            bob
+omicron         robert                  bob
 # bryanh can also connect as guest1
-omicron       bryanh            guest1
+omicron         bryanh                  guest1
 </programlisting>
   </example>
  </sect1>
@@ -1329,6 +1339,95 @@ omicron       bryanh            guest1
 ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
     </synopsis>
 
+  </sect2>
+
+  <sect2 id="auth-radius">
+   <title>RADIUS authentication</title>
+
+   <indexterm zone="auth-radius">
+    <primary>RADIUS</primary>
+   </indexterm>
+
+   <para>
+    This authentication method operates similarly to
+    <literal>password</literal> except that it uses RADIUS
+    as the password verification method. RADIUS is used only to validate
+    the user name/password pairs. Therefore the user must already
+    exist in the database before RADIUS can be used for
+    authentication.
+   </para>
+
+   <para>
+    When using RADIUS authentication, an Access Request message will be sent
+    to the configured RADIUS server. This request will be of type
+    <literal>Authenticate Only</literal>, and include parameters for
+    <literal>user name</>, <literal>password</> (encrypted) and
+    <literal>NAS Identifier</>. The request will be encrypted using
+    a secret shared with the server. The RADIUS server will respond to
+    this server with either <literal>Access Accept</> or
+    <literal>Access Reject</>. There is no support for RADIUS accounting.
+   </para>
+
+   <para>
+    The following configuration options are supported for RADIUS:
+     <variablelist>
+      <varlistentry>
+       <term><literal>radiusserver</literal></term>
+       <listitem>
+        <para>
+         The IP address of the RADIUS server to connect to. This must
+         be an IPV4 address and not a hostname. This parameter is required.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiussecret</literal></term>
+       <listitem>
+        <para>
+         The shared secret used when talking securely to the RADIUS
+         server. This must have exactly the same value on the PostgreSQL
+         and RADIUS servers. It is recommended that this is a string of
+         at least 16 characters. This parameter is required.
+         <note>
+         <para>
+          The encryption vector used will only be cryptographically
+          strong if <productname>PostgreSQL</> is built with support for
+          <productname>OpenSSL</>. In other cases, the transmission to the
+          RADIUS server should only be considered obfuscated, not secured, and
+          external security measures should be applied if necessary.
+         </para>
+         </note>
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiusport</literal></term>
+       <listitem>
+        <para>
+         The port number on the RADIUS server to connect to. If no port
+         is specified, the default port <literal>1812</> will be used.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiusidentifier</literal></term>
+       <listitem>
+        <para>
+         The string used as <literal>NAS Identifier</> in the RADIUS
+         requests. This parameter can be used as a second parameter
+         identifying for example which database the user is attempting
+         to authenticate as, which can be used for policy matching on
+         the RADIUS server. If no identifier is specified, the default
+         <literal>postgresql</> will be used.
+        </para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist>
+   </para>
   </sect2>
 
   <sect2 id="auth-cert">

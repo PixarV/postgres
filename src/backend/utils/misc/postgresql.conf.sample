@@ -181,7 +181,10 @@
 #archive_timeout = 0		# force a logfile segment switch after this
 				# number of seconds; 0 disables
 
+# - Hot Standby -
+
 #recovery_connections = on	# allows connections during recovery
+#minimize_standby_conflicts = on # additional WAL info to avoid conflicts
 #max_standby_delay = 30		# max acceptable standby lag (s) to help queries
 				# complete without conflict; -1 disables
 
@@ -432,7 +435,6 @@
 #temp_tablespaces = ''			# a list of tablespace names, '' uses
 					# only default tablespace
 #check_function_bodies = on
-#default_do_language = 'plpgsql'
 #default_transaction_isolation = 'read committed'
 #default_transaction_read_only = off
 #session_replication_role = 'origin'

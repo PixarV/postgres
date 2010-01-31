@@ -815,25 +815,6 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		}
 
 		/*
-		 * In Hot Standby we abort the lock wait if Startup process is waiting
-		 * since this would result in a deadlock. The deadlock occurs because
-		 * if we are waiting it must be behind an AccessExclusiveLock, which
-		 * can only clear when a transaction completion record is replayed.
-		 * If Startup process is waiting we never will clear that lock, so to
-		 * wait for it just causes a deadlock.
-		 */
-		if (RecoveryInProgress() && !InRecovery &&
-			locktag->locktag_type == LOCKTAG_RELATION)
-		{
-			LWLockRelease(partitionLock);
-			ereport(ERROR,
-					(errcode(ERRCODE_T_R_DEADLOCK_DETECTED),
-					 errmsg("possible deadlock detected"),
-					 errdetail("process conflicts with recovery - please resubmit query later"),
-					 errdetail_log("process conflicts with recovery")));
-		}
-
-		/*
 		 * Set bitmask of locks this process already holds on this object.
 		 */
 		MyProc->heldLocks = proclock->holdMask;
@@ -1809,7 +1790,7 @@ LockReassignCurrentOwner(void)
 VirtualTransactionId *
 GetLockConflicts(const LOCKTAG *locktag, LOCKMODE lockmode)
 {
-	VirtualTransactionId *vxids;
+	static VirtualTransactionId *vxids;
 	LOCKMETHODID lockmethodid = locktag->locktag_lockmethodid;
 	LockMethod	lockMethodTable;
 	LOCK	   *lock;
@@ -1829,10 +1810,18 @@ GetLockConflicts(const LOCKTAG *locktag, LOCKMODE lockmode)
 	/*
 	 * Allocate memory to store results, and fill with InvalidVXID.  We only
 	 * need enough space for MaxBackends + a terminator, since prepared xacts
-	 * don't count.
+	 * don't count. InHotStandby allocate once in TopMemoryContext.
 	 */
-	vxids = (VirtualTransactionId *)
-		palloc0(sizeof(VirtualTransactionId) * (MaxBackends + 1));
+	if (InHotStandby)
+	{
+		if (vxids == NULL)
+			vxids = (VirtualTransactionId *)
+				MemoryContextAlloc(TopMemoryContext,
+					sizeof(VirtualTransactionId) * (MaxBackends + 1));
+	}
+	else
+		vxids = (VirtualTransactionId *)
+			palloc0(sizeof(VirtualTransactionId) * (MaxBackends + 1));
 
 	/*
 	 * Look up the lock object matching the tag.

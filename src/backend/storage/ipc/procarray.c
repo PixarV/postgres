@@ -1623,16 +1623,56 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
 /*
  * GetConflictingVirtualXIDs -- returns an array of currently active VXIDs.
  *
- * The array is palloc'd and is terminated with an invalid VXID.
- *
  * Usage is limited to conflict resolution during recovery on standby servers.
  * limitXmin is supplied as either latestRemovedXid, or InvalidTransactionId
  * in cases where we cannot accurately determine a value for latestRemovedXid.
- * If limitXmin is InvalidTransactionId then we know that the very
+ *
+ * If limitXmin is InvalidTransactionId then we are forced to assume that
  * latest xid that might have caused a cleanup record will be
  * latestCompletedXid, so we set limitXmin to be latestCompletedXid instead.
  * We then skip any backends with xmin > limitXmin. This means that
  * cleanup records don't conflict with some recent snapshots.
+ *
+ * The reason for using latestCompletedxid is that we aren't certain which
+ * of the xids in KnownAssignedXids are actually FATAL errors that did
+ * not write abort records. In almost every case they won't be, but we
+ * don't know that for certain. So we need to conflict with all current
+ * snapshots whose xmin is less than latestCompletedXid to be safe. This
+ * causes false positives in our assessment of which vxids conflict.
+ *
+ * By using exclusive lock we prevent new snapshots from being taken while
+ * we work out which snapshots to conflict with. This protects those new
+ * snapshots from also being included in our conflict list. 
+ *
+ * After the lock is released, we allow snapshots again. It is possible
+ * that we arrive at a snapshot that is identical to one that we just
+ * decided we should conflict with. This a case of false positives, not an
+ * actual problem.
+ * 
+ * There are two cases: (1) if we were correct in using latestCompletedXid
+ * then that means that all xids in the snapshot lower than that are FATAL
+ * errors, so not xids that ever commit. We can make no visibility errors
+ * if we allow such xids into the snapshot. (2) if we erred on the side of
+ * caution and in fact the latestRemovedXid should have been earlier than
+ * latestCompletedXid then we conflicted with a snapshot needlessly. Taking
+ * another identical snapshot is OK, because the earlier conflicted
+ * snapshot was a false positive.
+ * 
+ * In either case, a snapshot taken after conflict assessment will still be
+ * valid and non-conflicting even if an identical snapshot that existed
+ * before conflict assessment was assessed as conflicting.
+ * 
+ * If we allowed concurrent snapshots while we were deciding who to
+ * conflict with we would need to include all concurrent snapshotters in
+ * the conflict list as well. We'd have difficulty in working out exactly
+ * who that was, so it is happier for all concerned if we take an exclusive
+ * lock. Notice that we only hold that lock for as long as it takes to
+ * make the conflict list, not for the whole duration of the conflict
+ * resolution.
+ * 
+ * It also means that users waiting for a snapshot is a good thing, since
+ * it is more likely that they will live longer after having waited. So it
+ * is a benefit, not an oversight that we use exclusive lock here.
  *
  * We replace InvalidTransactionId with latestCompletedXid here because
  * this is the most convenient place to do that, while we hold ProcArrayLock.
@@ -1640,15 +1680,13 @@ GetCurrentVirtualXIDs(TransactionId limitXmin, bool excludeXmin0,
  * latestCompletedXid since doing so would be a performance issue during
  * normal running, so we check it essentially for free on the standby.
  *
- * If dbOid is valid we skip backends attached to other databases. Some
- * callers choose to skipExistingConflicts.
+ * If dbOid is valid we skip backends attached to other databases.
  *
  * Be careful to *not* pfree the result from this function. We reuse
  * this array sufficiently often that we use malloc for the result.
  */
 VirtualTransactionId *
-GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid,
-						  bool skipExistingConflicts)
+GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid)
 {
 	static VirtualTransactionId *vxids;
 	ProcArrayStruct *arrayP = procArray;
@@ -1685,9 +1723,6 @@ GetConflictingVirtualXIDs(TransactionId limitXmin, Oid dbOid,
 
 		/* Exclude prepared transactions */
 		if (proc->pid == 0)
-			continue;
-
-		if (skipExistingConflicts && proc->recoveryConflictPending)
 			continue;
 
 		if (!OidIsValid(dbOid) ||
@@ -1846,7 +1881,7 @@ CountDBBackends(Oid databaseid)
  * CancelDBBackends --- cancel backends that are using specified database
  */
 void
-CancelDBBackends(Oid databaseid)
+CancelDBBackends(Oid databaseid, ProcSignalReason sigmode, bool conflictPending)
 {
 	ProcArrayStruct *arrayP = procArray;
 	int			index;
@@ -1859,13 +1894,13 @@ CancelDBBackends(Oid databaseid)
 	{
 		volatile PGPROC *proc = arrayP->procs[index];
 
-		if (proc->databaseId == databaseid)
+		if (databaseid == InvalidOid || proc->databaseId == databaseid)
 		{
 			VirtualTransactionId procvxid;
 
 			GET_VXID_FROM_PGPROC(procvxid, *proc);
 
-			proc->recoveryConflictPending = true;
+			proc->recoveryConflictPending = conflictPending;
 			pid = proc->pid;
 			if (pid != 0)
 			{
@@ -1873,8 +1908,7 @@ CancelDBBackends(Oid databaseid)
 				 * Kill the pid if it's still here. If not, that's what we wanted
 				 * so ignore any errors.
 				 */
-				(void) SendProcSignal(pid, PROCSIG_RECOVERY_CONFLICT_DATABASE,
-										procvxid.backendId);
+				(void) SendProcSignal(pid, sigmode, procvxid.backendId);
 			}
 		}
 	}

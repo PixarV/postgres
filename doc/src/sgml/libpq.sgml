@@ -56,7 +56,8 @@
    one time.  (One reason to do that is to access more than one
    database.)  Each connection is represented by a
    <structname>PGconn</><indexterm><primary>PGconn</></> object, which
-   is obtained from the function <function>PQconnectdb</> or
+   is obtained from the function <function>PQconnectdb</>,
+   <function>PQconnectdbParams</>, or
    <function>PQsetdbLogin</>.  Note that these functions will always
    return a non-null object pointer, unless perhaps there is too
    little memory even to allocate the <structname>PGconn</> object.
@@ -91,35 +92,33 @@
 
    <variablelist>
     <varlistentry>
-     <term><function>PQconnectdb</function><indexterm><primary>PQconnectdb</></></term>
+     <term><function>PQconnectdbParams</function><indexterm><primary>PQconnectdbParams</></></term>
      <listitem>
       <para>
        Makes a new connection to the database server.
 
        <synopsis>
-        PGconn *PQconnectdb(const char *conninfo);
+        PGconn *PQconnectdbParams(const char **keywords, const char **values);
        </synopsis>
       </para>
 
       <para>
        This function opens a new database connection using the parameters taken
-       from the string <literal>conninfo</literal>.  Unlike <function>PQsetdbLogin</> below,
-       the parameter set can be extended without changing the function signature,
-       so use of this function (or its nonblocking analogues <function>PQconnectStart</>
-       and <function>PQconnectPoll</function>) is preferred for new application programming.
+       from two <symbol>NULL</symbol>-terminated arrays. The first,
+       <literal>keywords</literal>, is defined as an array of strings, each one
+       being a key word. The second, <literal>values</literal>, gives the value
+       for each key word. Unlike <function>PQsetdbLogin</> below, the parameter
+       set can be extended without changing the function signature, so use of
+       this function (or its nonblocking analogs <function>PQconnectStartParams</>
+       and <function>PQconnectPoll</function>) is preferred for new application
+       programming.
       </para>
 
       <para>
-       The passed string
-       can be empty to use all default parameters, or it can contain one or more
-       parameter settings separated by whitespace.
-       Each parameter setting is in the form <literal>keyword = value</literal>.
-       Spaces around the equal sign are optional.
-       To write an empty value or a value containing
-       spaces, surround it with single quotes, e.g.,
-       <literal>keyword = 'a value'</literal>.
-       Single quotes and backslashes within the value must be escaped with a
-       backslash, i.e., <literal>\'</literal> and <literal>\\</literal>.
+       The passed arrays can be empty to use all default parameters, or can
+       contain one or more parameter settings. They should be matched in length.
+       Processing will stop with the last non-<symbol>NULL</symbol> element
+       of the <literal>keywords</literal> array.
       </para>
 
       <para>
@@ -478,6 +477,39 @@
     </varlistentry>
 
     <varlistentry>
+     <term><function>PQconnectdb</function><indexterm><primary>PQconnectdb</></></term>
+     <listitem>
+      <para>
+       Makes a new connection to the database server.
+
+       <synopsis>
+        PGconn *PQconnectdb(const char *conninfo);
+       </synopsis>
+      </para>
+
+      <para>
+       This function opens a new database connection using the parameters taken
+       from the string <literal>conninfo</literal>.
+      </para>
+
+      <para>
+       The passed string can be empty to use all default parameters, or it can
+       contain one or more parameter settings separated by whitespace.
+       Each parameter setting is in the form <literal>keyword = value</literal>.
+       Spaces around the equal sign are optional. To write an empty value,
+       or a value containing spaces, surround it with single quotes, e.g.,
+       <literal>keyword = 'a value'</literal>. Single quotes and backslashes
+       within the value must be escaped with a backslash, i.e.,
+       <literal>\'</literal> and <literal>\\</literal>.
+      </para>
+
+      <para>
+       The currently recognized parameter key words are the same as above.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
      <term><function>PQsetdbLogin</function><indexterm><primary>PQsetdbLogin</></></term>
      <listitem>
       <para>
@@ -532,12 +564,17 @@ PGconn *PQsetdb(char *pghost,
     </varlistentry>
 
     <varlistentry>
+     <term><function>PQconnectStartParams</function><indexterm><primary>PQconnectStartParams</></></term>
      <term><function>PQconnectStart</function><indexterm><primary>PQconnectStart</></></term>
      <term><function>PQconnectPoll</function><indexterm><primary>PQconnectPoll</></></term>
      <listitem>
       <para>
        <indexterm><primary>nonblocking connection</primary></indexterm>
        Make a connection to the database server in a nonblocking manner.
+
+       <synopsis>
+        PGconn *PQconnectStartParams(const char **keywords, const char **values);
+       </synopsis>
 
        <synopsis>
         PGconn *PQconnectStart(const char *conninfo);
@@ -549,29 +586,37 @@ PGconn *PQsetdb(char *pghost,
       </para>
 
       <para>
-       These two functions are used to open a connection to a database server such
+       These three functions are used to open a connection to a database server such
        that your application's thread of execution is not blocked on remote I/O
-       whilst doing so.
-       The point of this approach is that the waits for I/O to complete can occur
-       in the application's main loop, rather than down inside
-       <function>PQconnectdb</>, and so the application can manage this
-       operation in parallel with other activities.
+       whilst doing so. The point of this approach is that the waits for I/O to
+       complete can occur in the application's main loop, rather than down inside
+       <function>PQconnectdbParams</> or <function>PQconnectdb</>, and so the
+       application can manage this operation in parallel with other activities.
       </para>
 
       <para>
-       The database connection is made using the parameters taken from the string
-       <literal>conninfo</literal>, passed to <function>PQconnectStart</function>. This string is in
-       the same format as described above for <function>PQconnectdb</function>.
+       With <function>PQconnectStartParams</function>, the database connection is made
+       using the parameters taken from the <literal>keywords</literal> and
+       <literal>values</literal> arrays, as described above for
+       <function>PQconnectdbParams</function>.
       </para>
+
       <para>
-       Neither <function>PQconnectStart</function> nor <function>PQconnectPoll</function> will block, so long as a number of
+       With <function>PQconnectStart</function>, the database connection is made
+       using the parameters taken from the string <literal>conninfo</literal> as
+       described above for <function>PQconnectdb</function>.
+      </para>
+
+      <para>
+       Neither <function>PQconnectStartParams</function> nor <function>PQconnectStart</function>
+       nor <function>PQconnectPoll</function> will block, so long as a number of
        restrictions are met:
        <itemizedlist>
         <listitem>
          <para>
           The <literal>hostaddr</> and <literal>host</> parameters are used appropriately to ensure that
           name and reverse name queries are not made. See the documentation of
-          these parameters under <function>PQconnectdb</function> above for details.
+          these parameters under <function>PQconnectdbParams</function> above for details.
          </para>
         </listitem>
 
@@ -589,6 +634,11 @@ PGconn *PQsetdb(char *pghost,
          </para>
         </listitem>
        </itemizedlist>
+      </para>
+
+      <para>
+       Note: use of <function>PQconnectStartParams</> is analogous to
+       <function>PQconnectStart</> shown below.
       </para>
 
       <para>
@@ -883,7 +933,8 @@ PQconninfoOption *PQconninfoParse(const char *conninfo, char **errmsg);
        parameters previously used. This can be useful for error recovery if a
        working connection is lost. They differ from <function>PQreset</function> (above) in that they
        act in a nonblocking manner. These functions suffer from the same
-       restrictions as <function>PQconnectStart</> and <function>PQconnectPoll</>.
+       restrictions as <function>PQconnectStartParams</>, <function>PQconnectStart</>
+       and <function>PQconnectPoll</>.
       </para>
 
       <para>
@@ -1096,9 +1147,9 @@ PQconninfoOption *PQconninfoParse(const char *conninfo, char **errmsg);
       </para>
 
       <para>
-       See the entry for <function>PQconnectStart</> and <function>PQconnectPoll</> with regards
-       to other status codes
-       that might be seen.
+       See the entry for <function>PQconnectStartParams</>, <function>PQconnectStart</>
+       and <function>PQconnectPoll</> with regards to other status codes that
+       might be seen.
       </para>
      </listitem>
     </varlistentry>
@@ -2926,117 +2977,221 @@ typedef struct {
    <title>Escaping Strings for Inclusion in SQL Commands</title>
 
    <indexterm zone="libpq-exec-escape-string">
-    <primary>PQescapeStringConn</primary>
-   </indexterm>
-   <indexterm zone="libpq-exec-escape-string">
-    <primary>PQescapeString</primary>
-   </indexterm>
-   <indexterm zone="libpq-exec-escape-string">
     <primary>escaping strings</primary>
     <secondary>in libpq</secondary>
    </indexterm>
 
-   <para>
-    <function>PQescapeStringConn</function> escapes a string for use within an SQL
-    command.  This is useful when inserting data values as literal constants
-    in SQL commands.  Certain characters (such as quotes and backslashes) must
-    be escaped to prevent them from being interpreted specially by the SQL parser.
-    <function>PQescapeStringConn</> performs this operation.
-   </para>
-
-   <tip>
-    <para>
-     It is especially important to do proper escaping when handling strings that
-     were received from an untrustworthy source.  Otherwise there is a security
-     risk: you are vulnerable to <quote>SQL injection</> attacks wherein unwanted
-     SQL commands are fed to your database.
-    </para>
-   </tip>
-
-   <para>
-    Note that it is not necessary nor correct to do escaping when a data
-    value is passed as a separate parameter in <function>PQexecParams</> or
-    its sibling routines.
-
-    <synopsis>
-     size_t PQescapeStringConn (PGconn *conn,
-                                char *to, const char *from, size_t length,
-                                int *error);
-    </synopsis>
-   </para>
-
-   <para>
-    <function>PQescapeStringConn</> writes an escaped version of the
-    <parameter>from</> string to the <parameter>to</> buffer, escaping
-    special characters so that they cannot cause any harm, and adding a
-    terminating zero byte.  The single quotes that must surround
-    <productname>PostgreSQL</> string literals are not included in the
-    result string; they should be provided in the SQL command that the
-    result is inserted into.  The parameter <parameter>from</> points to
-    the first character of the string that is to be escaped, and the
-    <parameter>length</> parameter gives the number of bytes in this
-    string.  A terminating zero byte is not required, and should not be
-    counted in <parameter>length</>.  (If a terminating zero byte is found
-    before <parameter>length</> bytes are processed,
-    <function>PQescapeStringConn</> stops at the zero; the behavior is
-    thus rather like <function>strncpy</>.) <parameter>to</> shall point
-    to a buffer that is able to hold at least one more byte than twice
-    the value of <parameter>length</>, otherwise the behavior is undefined.
-    Behavior is likewise undefined if the <parameter>to</> and
-    <parameter>from</> strings overlap.
-   </para>
-
-   <para>
-    If the <parameter>error</> parameter is not NULL, then
-    <literal>*error</> is set to zero on success, nonzero on error.
-    Presently the only possible error conditions involve invalid multibyte
-    encoding in the source string.  The output string is still generated
-    on error, but it can be expected that the server will reject it as
-    malformed.  On error, a suitable message is stored in the
-    <parameter>conn</> object, whether or not <parameter>error</> is NULL.
-   </para>
-
-   <para>
-    <function>PQescapeStringConn</> returns the number of bytes written
-    to <parameter>to</>, not including the terminating zero byte.
-   </para>
-
-   <para>
-    <synopsis>
-     size_t PQescapeString (char *to, const char *from, size_t length);
-    </synopsis>
-   </para>
-
-   <para>
-    <function>PQescapeString</> is an older, deprecated version of
-    <function>PQescapeStringConn</>; the difference is that it does
-    not take <parameter>conn</> or <parameter>error</> parameters.
-    Because of this, it cannot adjust its behavior depending on the
-    connection properties (such as character encoding) and therefore
-    <emphasis>it might give the wrong results</>.  Also, it has no way
-    to report error conditions.
-   </para>
-
-   <para>
-    <function>PQescapeString</> can be used safely in single-threaded
-    client programs that work with only one <productname>PostgreSQL</>
-    connection at a time (in this case it can find out what it needs to
-    know <quote>behind the scenes</>).  In other contexts it is a security
-    hazard and should be avoided in favor of
-    <function>PQescapeStringConn</>.
-   </para>
-  </sect2>
-
-
-  <sect2 id="libpq-exec-escape-bytea">
-   <title>Escaping Binary Strings for Inclusion in SQL Commands</title>
-
-   <indexterm zone="libpq-exec-escape-bytea">
-    <primary>bytea</primary>
-    <secondary sortas="libpq">in libpq</secondary>
-   </indexterm>
-
    <variablelist>
+    <varlistentry>
+     <term>
+      <function>PQescapeLiteral</function>
+      <indexterm>
+       <primary>PQescapeLiteral</primary>
+      </indexterm>
+     </term>
+
+     <listitem>
+     <para>
+      <synopsis>
+       size_t PQescapeLiteral(PGconn *conn, char *str, size_t len)
+      </synopsis>
+     </para>
+
+     <para>
+      <function>PQescapeLiteral</function> escapes a string for
+      use within an SQL command.  This is useful when inserting data
+      values as literal constants in SQL commands.  Certain characters
+      (such as quotes and backslashes) must be escaped to prevent them
+      from being interpreted specially by the SQL parser.
+      <function>PQescapeLiteral</> performs this operation.
+     </para>
+
+     <para>
+      <function>PQescapeLiteral</> returns an escaped version of the
+      <parameter>str</parameter> parameter in memory allocated with
+      <function>malloc()</>.  This memory should be freed using
+      <function>PQfreemem()</> when the result is no longer needed.
+      A terminating zero byte is not required, and should not be
+      counted in <parameter>length</>.  (If a terminating zero byte is found
+      before <parameter>length</> bytes are processed,
+      <function>PQescapeLiteral</> stops at the zero; the behavior is
+      thus rather like <function>strncpy</>.) The
+      return string has all special characters replaced so that they can
+      be properly processed by the <productname>PostgreSQL</productname>
+      string literal parser.  A terminating zero byte is also added.  The
+      single quotes that must surround <productname>PostgreSQL</productname>
+      string literals are included in the result string.
+     </para>
+
+     <para>
+      On error, <function>PQescapeLiteral</> returns NULL and a suitable
+      message is stored in the <parameter>conn</> object.
+     </para>
+
+     <tip>
+      <para>
+       It is especially important to do proper escaping when handling
+       strings that were received from an untrustworthy source.
+       Otherwise there is a security risk: you are vulnerable to
+       <quote>SQL injection</> attacks wherein unwanted SQL commands are
+       fed to your database.
+      </para>
+     </tip>
+
+     <para>
+      Note that it is not necessary nor correct to do escaping when a data
+      value is passed as a separate parameter in <function>PQexecParams</> or
+      its sibling routines.
+     </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>PQescapeIdentifier</function>
+      <indexterm>
+       <primary>PQescapeIdentifier</primary>
+      </indexterm>
+     </term>
+
+     <listitem>
+     <para>
+      <synopsis>
+       size_t PQescapeIdentifier(PGconn *conn, char *str, size_t len)
+      </synopsis>
+     </para>
+
+     <para>
+      <function>PQescapeIndentifier</function> escapes a string for
+      use as an SQL identifier, such as a table, column, or function name.
+      This is useful when a user-supplied identifier might contain
+      special characters that would otherwise not be interpreted as part
+      of the identifier by the SQL parser, or when the identifier might
+      contain uppercase characters whose case should be preserved.
+     </para>
+
+     <para>
+      <function>PQescapeIdentifier</> returns a version of the
+      <parameter>str</parameter> parameter escaped as an SQL identifier
+      in memory allocated with <function>malloc()</>.  This memory must be
+      freed using <function>PQfreemem()</> when the result is no longer
+      needed.  A terminating zero byte is not required, and should not be
+      counted in <parameter>length</>.  (If a terminating zero byte is found
+      before <parameter>length</> bytes are processed,
+      <function>PQescapeIdentifier</> stops at the zero; the behavior is
+      thus rather like <function>strncpy</>.) The
+      return string has all special characters replaced so that it
+      will be properly processed as an SQL identifier.  A terminating zero byte
+      is also added.  The return string will also be surrounded by double
+      quotes.
+     </para>
+
+     <para>
+      On error, <function>PQescapeIdentifier</> returns NULL and a suitable
+      message is stored in the <parameter>conn</> object.
+     </para>
+
+     <tip>
+      <para>
+       As with string literals, to prevent SQL injection attacks,
+       SQL identifiers must be escaped when they are received from an
+       untrustworthy source.
+      </para>
+     </tip>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>PQescapeStringConn</function>
+      <indexterm>
+       <primary>PQescapeStringConn</primary>
+      </indexterm>
+     </term>
+
+     <listitem>
+     <para>
+      <synopsis>
+       size_t PQescapeStringConn (PGconn *conn,
+                                  char *to, const char *from, size_t length,
+                                  int *error);
+      </synopsis>
+     </para>
+
+     <para>
+      <function>PQescapeStringConn</> escapes string literals, much like
+      <function>PQescapeLiteral</>.  Unlike <function>PQescapeLiteral</>,
+      the caller is responsible for providing an appropriately sized buffer.
+      Furthermore, <function>PQescapeStringConn</> does not generate the
+      single quotes that must surround <productname>PostgreSQL</> string
+      literals; they should be provided in the SQL command that the
+      result is inserted into.  The parameter <parameter>from</> points to
+      the first character of the string that is to be escaped, and the
+      <parameter>length</> parameter gives the number of bytes in this
+      string.  A terminating zero byte is not required, and should not be
+      counted in <parameter>length</>.  (If a terminating zero byte is found
+      before <parameter>length</> bytes are processed,
+      <function>PQescapeStringConn</> stops at the zero; the behavior is
+      thus rather like <function>strncpy</>.) <parameter>to</> shall point
+      to a buffer that is able to hold at least one more byte than twice
+      the value of <parameter>length</>, otherwise the behavior is undefined.
+      Behavior is likewise undefined if the <parameter>to</> and
+      <parameter>from</> strings overlap.
+     </para>
+
+     <para>
+      If the <parameter>error</> parameter is not NULL, then
+      <literal>*error</> is set to zero on success, nonzero on error.
+      Presently the only possible error conditions involve invalid multibyte
+      encoding in the source string.  The output string is still generated
+      on error, but it can be expected that the server will reject it as
+      malformed.  On error, a suitable message is stored in the
+      <parameter>conn</> object, whether or not <parameter>error</> is NULL.
+     </para>
+
+     <para>
+      <function>PQescapeStringConn</> returns the number of bytes written
+      to <parameter>to</>, not including the terminating zero byte.
+     </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>PQescapeString</function>
+      <indexterm>
+       <primary>PQescapeString</primary>
+      </indexterm>
+     </term>
+
+     <listitem>
+     <para>
+      <synopsis>
+       size_t PQescapeString (char *to, const char *from, size_t length);
+      </synopsis>
+     </para>
+
+     <para>
+      <function>PQescapeString</> is an older, deprecated version of
+      <function>PQescapeStringConn</>; the difference is that it does
+      not take <parameter>conn</> or <parameter>error</> parameters.
+      Because of this, it cannot adjust its behavior depending on the
+      connection properties (such as character encoding) and therefore
+      <emphasis>it might give the wrong results</>.  Also, it has no way
+      to report error conditions.
+     </para>
+
+     <para>
+      <function>PQescapeString</> can be used safely in single-threaded
+      client programs that work with only one <productname>PostgreSQL</>
+      connection at a time (in this case it can find out what it needs to
+      know <quote>behind the scenes</>).  In other contexts it is a security
+      hazard and should be avoided in favor of
+      <function>PQescapeStringConn</>.
+     </para>
+     </listitem>
+    </varlistentry>
+
     <varlistentry>
      <term>
       <function>PQescapeByteaConn</function>
@@ -3085,7 +3240,7 @@ typedef struct {
       <para>
        <function>PQescapeByteaConn</> returns an escaped version of the
        <parameter>from</parameter> parameter binary string in memory
-       allocated with <function>malloc()</>.  This memory must be freed using
+       allocated with <function>malloc()</>.  This memory should be freed using
        <function>PQfreemem()</> when the result is no longer needed.  The
        return string has all special characters replaced so that they can
        be properly processed by the <productname>PostgreSQL</productname>
@@ -4277,7 +4432,7 @@ typedef struct {
        be non-<symbol>NULL</symbol>.  <parameter>*buffer</> is set to
        point to the allocated memory, or to <symbol>NULL</symbol> in cases
        where no buffer is returned.  A non-<symbol>NULL</symbol> result
-       buffer must be freed using <function>PQfreemem</> when no longer
+       buffer should be freed using <function>PQfreemem</> when no longer
        needed.
       </para>
 
@@ -5786,6 +5941,18 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     <listitem>
      <para>
       <indexterm>
+       <primary><envar>PGSERVICEFILE</envar></primary>
+      </indexterm>
+      <envar>PGSERVICEFILE</envar> specifies the name of the per-user
+      connection service file.  If not set, it defaults
+      to <filename>~/.pg_service.conf</>
+      (see <xref linkend="libpq-pgservice">).
+     </para>
+    </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
        <primary><envar>PGREALM</envar></primary>
       </indexterm>
       <envar>PGREALM</envar> sets the Kerberos realm to use with
@@ -5979,7 +6146,8 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
        <primary><envar>PGSYSCONFDIR</envar></primary>
       </indexterm>
       <envar>PGSYSCONFDIR</envar> sets the directory containing the
-      <filename>pg_service.conf</> file.
+      <filename>pg_service.conf</> file and in a future version
+      possibly other system-wide configuration files.
      </para>
     </listitem>
 
@@ -6055,6 +6223,9 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
   <indexterm zone="libpq-pgservice">
    <primary>pg_service.conf</primary>
   </indexterm>
+  <indexterm zone="libpq-pgservice">
+   <primary>.pg_service.conf</primary>
+  </indexterm>
 
   <para>
    The connection service file allows libpq connection parameters to be
@@ -6066,12 +6237,31 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
   </para>
 
   <para>
-   To use this feature, copy
-   <filename>share/pg_service.conf.sample</filename> to
-   <filename>etc/pg_service.conf</filename> and edit the file to add
-   service names and parameters. This file can be used for client-only
-   installs too. The file's location can also be specified by the
-   <envar>PGSYSCONFDIR</envar> environment variable.
+   The connection service file can be a per-user service file
+   at <filename>~/.pg_service.conf</filename> or the location
+   specified by the environment variable <envar>PGSERVICEFILE</envar>,
+   or it can be a system-wide file
+   at <filename>etc/pg_service.conf</filename> or in the directory
+   specified by the environment variable
+   <envar>PGSYSCONFDIR</envar>.  If service definitions with the same
+   name exist in the user and the system file, the user file takes
+   precedence.
+  </para>
+
+  <para>
+   The file uses an <quote>INI file</quote> format where the section
+   name is the service name and the parameters are connection
+   parameters; see <xref linkend="libpq-connect"> for a list.  For
+   example:
+<programlisting>
+# comment
+[mydb]
+host=somehost
+port=5433
+user=admin
+</programlisting>
+   An example file is provided at
+   <filename>share/pg_service.conf.sample</filename>.
   </para>
  </sect1>
 

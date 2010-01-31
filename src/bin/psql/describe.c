@@ -1108,6 +1108,7 @@ describeOneTableDetails(const char *schemaname,
 		bool		hasexclusion;
 		Oid			tablespace;
 		char	   *reloptions;
+		char	   *reloftype;
 	}			tableinfo;
 	bool		show_modifiers = false;
 	bool		retval;
@@ -1127,7 +1128,8 @@ describeOneTableDetails(const char *schemaname,
 		printfPQExpBuffer(&buf,
 			  "SELECT c.relchecks, c.relkind, c.relhasindex, c.relhasrules, "
 						  "c.relhastriggers, c.relhasoids, "
-						  "%s, c.reltablespace, c.relhasexclusion\n"
+						  "%s, c.reltablespace, c.relhasexclusion, "
+						  "CASE WHEN c.reloftype = 0 THEN '' ELSE c.reloftype::pg_catalog.regtype::text END\n"
 						  "FROM pg_catalog.pg_class c\n "
 		   "LEFT JOIN pg_catalog.pg_class tc ON (c.reltoastrelid = tc.oid)\n"
 						  "WHERE c.oid = '%s'\n",
@@ -1207,6 +1209,8 @@ describeOneTableDetails(const char *schemaname,
 		atooid(PQgetvalue(res, 0, 7)) : 0;
 	tableinfo.hasexclusion = (pset.sversion >= 80500) ?
 		strcmp(PQgetvalue(res, 0, 8), "t") == 0 : false;
+	tableinfo.reloftype = (pset.sversion >= 80500 && strcmp(PQgetvalue(res, 0, 9), "") != 0) ?
+		strdup(PQgetvalue(res, 0, 9)) : 0;
 	PQclear(res);
 	res = NULL;
 
@@ -1854,10 +1858,11 @@ describeOneTableDetails(const char *schemaname,
 		{
 			printfPQExpBuffer(&buf,
 							  "SELECT t.tgname, "
-							  "pg_catalog.pg_get_triggerdef(t.oid), "
+							  "pg_catalog.pg_get_triggerdef(t.oid%s), "
 							  "t.tgenabled\n"
 							  "FROM pg_catalog.pg_trigger t\n"
 							  "WHERE t.tgrelid = '%s' AND ",
+							  (pset.sversion >= 80500 ? ", true" : ""),
 							  oid);
 			if (pset.sversion >= 80500)
 				appendPQExpBuffer(&buf, "NOT t.tgisinternal");
@@ -2029,6 +2034,13 @@ describeOneTableDetails(const char *schemaname,
 			}
 		}
 		PQclear(result);
+
+		/* Table type */
+		if (tableinfo.reloftype)
+		{
+			printfPQExpBuffer(&buf, _("Typed table of type: %s"), tableinfo.reloftype);
+			printTableAddFooter(&cont, buf.data);
+		}
 
 		/* OIDs and options */
 		if (verbose)

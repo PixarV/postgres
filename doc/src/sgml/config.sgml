@@ -1825,16 +1825,33 @@ archive_command = 'copy "%p" "C:\\server\\archivedir\\%f"'  # Windows
       <listitem>
        <para>
         When server acts as a standby, this parameter specifies a wait policy
-        for queries that conflict with incoming data changes. Valid settings
-        are -1, meaning wait forever, or a wait time of 0 or more seconds.
-        If a conflict should occur the server will delay up to this
-        amount before it begins trying to resolve things less amicably, as
+        for queries that conflict with data changes being replayed by recovery.
+        If a conflict should occur the server will delay up to this number
+        of seconds before it begins trying to resolve things less amicably, as
         described in <xref linkend="hot-standby-conflict">. Typically,
         this parameter makes sense only during replication, so when
-        performing an archive recovery to recover from data loss a
-        parameter setting of 0 is recommended.  The default is 30 seconds.
+        performing an archive recovery to recover from data loss a very high
+        parameter setting is recommended.  The default is 30 seconds.
+        There is no wait-forever setting because of the potential for deadlock
+        which that setting would introduce.
         This parameter can only be set in the <filename>postgresql.conf</>
         file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="minimize-standby-conflicts" xreflabel="minimize_standby_conflicts">
+      <term><varname>minimize_standby_conflicts</varname> (<type>boolean</type>)</term>
+      <indexterm>
+       <primary><varname>minimize_standby_conflicts</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+        Generates additional information to the transaction log (WAL) to minimize
+        the number of false positive cancelations caused by recovery conflicts on
+        a standby server that consumes WAL data from this server.
+        There is additional performance cost to enabling this parameter.
+        Parameter has no effect during recovery, only in normal running.
        </para>
       </listitem>
      </varlistentry>
@@ -4127,21 +4144,6 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         endterm="sql-createfunction-title">. Disabling validation is
         occasionally useful to avoid problems such as forward references
         when restoring function definitions from a dump.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="guc-default-do-language" xreflabel="default_do_language">
-      <term><varname>default_do_language</varname> (<type>string</type>)</term>
-      <indexterm>
-       <primary><varname>default_do_language</> configuration parameter</primary>
-      </indexterm>
-      <listitem>
-       <para>
-        This parameter specifies the language to use when the
-        <literal>LANGUAGE</> option is omitted in a
-        <xref linkend="sql-do" endterm="sql-do-title"> statement.
-        The default is <literal>plpgsql</literal>.
        </para>
       </listitem>
      </varlistentry>

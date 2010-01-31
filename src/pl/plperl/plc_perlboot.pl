@@ -1,50 +1,78 @@
-SPI::bootstrap();
+
+#  $PostgreSQL$
+
+PostgreSQL::InServer::Util::bootstrap();
+
+use strict;
+use warnings;
 use vars qw(%_SHARED);
 
 sub ::plperl_warn {
 	(my $msg = shift) =~ s/\(eval \d+\) //g;
+	chomp $msg;
 	&elog(&NOTICE, $msg);
 }
 $SIG{__WARN__} = \&::plperl_warn;
 
 sub ::plperl_die {
 	(my $msg = shift) =~ s/\(eval \d+\) //g;
-    die $msg;
+	die $msg;
 }
 $SIG{__DIE__} = \&::plperl_die;
 
+sub ::mkfuncsrc {
+	my ($name, $imports, $prolog, $src) = @_;
+
+	my $BEGIN = join "\n", map {
+		my $names = $imports->{$_} || [];
+		"$_->import(qw(@$names));"
+	} sort keys %$imports;
+	$BEGIN &&= "BEGIN { $BEGIN }";
+
+	$name =~ s/\\/\\\\/g;
+	$name =~ s/::|'/_/g; # avoid package delimiters
+
+	return qq[ undef *{'$name'}; *{'$name'} = sub { $BEGIN $prolog $src } ];
+}
+
+# see also mksafefunc() in plc_safe_ok.pl
 sub ::mkunsafefunc {
-	my $ret = eval(qq[ sub { $_[0] $_[1] } ]);
+	no strict; # default to no strict for the eval
+	my $ret = eval(::mkfuncsrc(@_));
 	$@ =~ s/\(eval \d+\) //g if $@;
 	return $ret;
 }
 
-use strict;
-
-sub ::mk_strict_unsafefunc {
-	my $ret = eval(qq[ sub { use strict; $_[0] $_[1] } ]);
-	$@ =~ s/\(eval \d+\) //g if $@;
-	return $ret;
+sub ::encode_array_literal {
+	my ($arg, $delim) = @_;
+	return $arg
+		if ref $arg ne 'ARRAY';
+	$delim = ', ' unless defined $delim;
+	my $res = '';
+	foreach my $elem (@$arg) {
+		$res .= $delim if length $res;
+		if (ref $elem) {
+			$res .= ::encode_array_literal($elem, $delim);
+		}
+		elsif (defined $elem) {
+			(my $str = $elem) =~ s/(["\\])/\\$1/g;
+			$res .= qq("$str");
+		}
+		else {
+			$res .= 'NULL';
+		}
+	}
+	return qq({$res});
 }
 
-sub ::_plperl_to_pg_array {
-  my $arg = shift;
-  ref $arg eq 'ARRAY' || return $arg;
-  my $res = '';
-  my $first = 1;
-  foreach my $elem (@$arg) {
-    $res .= ', ' unless $first; $first = undef;
-    if (ref $elem) {
-      $res .= _plperl_to_pg_array($elem);
-    }
-    elsif (defined($elem)) {
-      my $str = qq($elem);
-      $str =~ s/([\"\\])/\\$1/g;
-      $res .= qq(\"$str\");
-    }
-    else {
-      $res .= 'NULL' ;
-    }
-  }
-  return qq({$res});
+sub ::encode_array_constructor {
+	my $arg = shift;
+	return quote_nullable($arg)
+		if ref $arg ne 'ARRAY';
+	my $res = join ", ", map {
+		(ref $_) ? ::encode_array_constructor($_)
+		         : ::quote_nullable($_)
+	} @$arg;
+	return "ARRAY[$res]";
 }
+

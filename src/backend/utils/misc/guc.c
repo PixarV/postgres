@@ -383,8 +383,6 @@ char	   *external_pid_file;
 
 char	   *pgstat_temp_directory;
 
-char	   *default_do_language;
-
 char	   *application_name;
 
 int			tcp_keepalives_idle;
@@ -1225,6 +1223,17 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"minimize_standby_conflicts", PGC_POSTMASTER, WAL_SETTINGS,
+			gettext_noop("Additional information is added to WAL records to"
+						 " minimize the number of false positive cancelations"
+						 " caused by recovery conflicts on WAL standby nodes."),
+			NULL
+		},
+		&MinimizeStandbyConflicts,
+		false, NULL, NULL
+	},
+
+	{
 		{"allow_system_table_mods", PGC_POSTMASTER, DEVELOPER_OPTIONS,
 			gettext_noop("Allows modifications of the structure of system tables."),
 			NULL,
@@ -1383,7 +1392,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&MaxStandbyDelay,
-		30, -1, INT_MAX, NULL, NULL
+		30, 0, INT_MAX, NULL, NULL
 	},
 
 	{
@@ -2602,15 +2611,6 @@ static struct config_string ConfigureNamesString[] =
 		"ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH", NULL, NULL
 	},
 #endif   /* USE_SSL */
-
-	{
-		{"default_do_language", PGC_USERSET, CLIENT_CONN_STATEMENT,
-			gettext_noop("Sets the language used in DO statement if LANGUAGE is not specified."),
-			NULL
-		},
-		&default_do_language,
-		"plpgsql", NULL, NULL
-	},
 
 	{
 		{"application_name", PGC_USERSET, LOGGING,
@@ -3904,7 +3904,14 @@ AtEOXact_GUC(bool isCommit, int nestLevel)
 	bool		still_dirty;
 	int			i;
 
-	Assert(nestLevel > 0 && nestLevel <= GUCNestLevel);
+	/*
+	 * Note: it's possible to get here with GUCNestLevel == nestLevel-1 during
+	 * abort, if there is a failure during transaction start before
+	 * AtStart_GUC is called.
+	 */
+	Assert(nestLevel > 0 &&
+		   (nestLevel <= GUCNestLevel ||
+			(nestLevel == GUCNestLevel + 1 && !isCommit)));
 
 	/* Quick exit if nothing's changed in this transaction */
 	if (!guc_dirty)

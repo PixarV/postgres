@@ -270,6 +270,8 @@ static void pgstat_recv_tabstat(PgStat_MsgTabstat *msg, int len);
 static void pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg, int len);
 static void pgstat_recv_dropdb(PgStat_MsgDropdb *msg, int len);
 static void pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len);
+static void pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len);
+static void pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len);
 static void pgstat_recv_autovac(PgStat_MsgAutovacStart *msg, int len);
 static void pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len);
 static void pgstat_recv_analyze(PgStat_MsgAnalyze *msg, int len);
@@ -1153,6 +1155,64 @@ pgstat_reset_counters(void)
 	pgstat_send(&msg, sizeof(msg));
 }
 
+/* ----------
+ * pgstat_reset_shared_counters() -
+ *
+ *	Tell the statistics collector to reset cluster-wide shared counters.
+ * ----------
+ */
+void
+pgstat_reset_shared_counters(const char *target)
+{
+	PgStat_MsgResetsharedcounter msg;
+
+	if (pgStatSock < 0)
+		return;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to reset statistics counters")));
+
+	if (strcmp(target, "bgwriter") == 0)
+		msg.m_resettarget = RESET_BGWRITER;
+	else
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("unrecognized reset target: '%s'", target),
+				 errhint("allowed targets are 'bgwriter'.")));
+	}
+
+	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSHAREDCOUNTER);
+	pgstat_send(&msg, sizeof(msg));
+}
+
+/* ----------
+ * pgstat_reset_single_counter() -
+ *
+ *	Tell the statistics collector to reset a single counter.
+ * ----------
+ */
+void pgstat_reset_single_counter(Oid objoid, PgStat_Single_Reset_Type type)
+{
+	PgStat_MsgResetsinglecounter msg;
+
+	if (pgStatSock < 0)
+		return;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to reset statistics counters")));
+
+	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSINGLECOUNTER);
+	msg.m_databaseid = MyDatabaseId;
+	msg.m_resettype = type;
+	msg.m_objectid = objoid;
+
+	pgstat_send(&msg, sizeof(msg));
+}
 
 /* ----------
  * pgstat_report_autovac() -
@@ -2915,6 +2975,18 @@ PgstatCollectorMain(int argc, char *argv[])
 											 len);
 					break;
 
+				case PGSTAT_MTYPE_RESETSHAREDCOUNTER:
+					pgstat_recv_resetsharedcounter(
+											 (PgStat_MsgResetsharedcounter *) &msg,
+											 len);
+					break;
+
+				case PGSTAT_MTYPE_RESETSINGLECOUNTER:
+					pgstat_recv_resetsinglecounter(
+											 (PgStat_MsgResetsinglecounter *) &msg,
+											 len);
+					break;
+
 				case PGSTAT_MTYPE_AUTOVAC_START:
 					pgstat_recv_autovac((PgStat_MsgAutovacStart *) &msg, len);
 					break;
@@ -3866,6 +3938,51 @@ pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len)
 									 PGSTAT_FUNCTION_HASH_SIZE,
 									 &hash_ctl,
 									 HASH_ELEM | HASH_FUNCTION);
+}
+
+/* ----------
+ * pgstat_recv_resetshared() -
+ *
+ *	Reset some shared statistics of the cluster.
+ * ----------
+ */
+static void
+pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len)
+{
+    if (msg->m_resettarget==RESET_BGWRITER)
+	{
+		/* Reset the global background writer statistics for the cluster. */
+		memset(&globalStats, 0, sizeof(globalStats));
+	}
+
+	/*
+	 * Presumably the sender of this message validated the target, don't
+	 * complain here if it's not valid
+	 */
+}
+
+/* ----------
+ * pgstat_recv_resetsinglecounter() -
+ *
+ *	Reset a statistics for a single object
+ * ----------
+ */
+static void
+pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len)
+{
+	PgStat_StatDBEntry *dbentry;
+
+	dbentry = pgstat_get_db_entry(msg->m_databaseid, false);
+
+	if (!dbentry)
+		return;
+
+
+	/* Remove object if it exists, ignore it if not */
+	if (msg->m_resettype == RESET_TABLE)
+		(void) hash_search(dbentry->tables, (void *) &(msg->m_objectid), HASH_REMOVE, NULL);
+	else if (msg->m_resettype == RESET_FUNCTION)
+		(void) hash_search(dbentry->functions, (void *)&(msg->m_objectid), HASH_REMOVE, NULL);
 }
 
 /* ----------

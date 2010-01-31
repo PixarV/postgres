@@ -183,10 +183,10 @@ extern int	XLogArchiveTimeout;
 extern bool log_checkpoints;
 extern bool XLogRequestRecoveryConnections;
 extern int MaxStandbyDelay;
+extern bool MinimizeStandbyConflicts;
 
 #define XLogArchivingActive()	(XLogArchiveMode)
 #define XLogArchiveCommandSet() (XLogArchiveCommand[0] != '\0')
-#define XLogStandbyInfoActive()	(XLogRequestRecoveryConnections && XLogArchiveMode)
 
 /*
  * This is in walsender.c, but declared here so that we don't need to include
@@ -199,6 +199,9 @@ extern int	MaxWalSenders;
  * WAL archiving is enabled or XLOG streaming is allowed.
  */
 #define XLogIsNeeded() (XLogArchivingActive() || (MaxWalSenders > 0))
+
+/* Do we need to WAL-log information required only for Hot Standby? */
+#define XLogStandbyInfoActive()	(XLogRequestRecoveryConnections && XLogIsNeeded())
 
 #ifdef WAL_DEBUG
 extern bool XLOG_DEBUG;
@@ -278,6 +281,7 @@ extern void InitXLOGAccess(void);
 extern void CreateCheckPoint(int flags);
 extern bool CreateRestartPoint(int flags);
 extern void XLogPutNextOid(Oid nextOid);
+extern void XLogReportUnloggedStatement(char *reason);
 extern XLogRecPtr GetRedoRecPtr(void);
 extern XLogRecPtr GetInsertRecPtr(void);
 extern XLogRecPtr GetWriteRecPtr(void);
