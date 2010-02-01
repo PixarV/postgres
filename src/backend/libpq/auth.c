@@ -2659,11 +2659,16 @@ CheckRADIUSAuth(Port *port)
 #ifdef HAVE_IPV6
 	localaddr.sin6_family = serveraddrs[0].ai_family;
 	localaddr.sin6_addr = in6addr_any;
+	if (localaddr.sin6_family == AF_INET6)
+		addrsize = sizeof(struct sockaddr_in6);
+	else
+		addrsize = sizeof(struct sockaddr_in);
 #else
 	localaddr.sin_family = serveraddrs[0].ai_family;
 	localaddr.sin_addr.s_addr = INADDR_ANY;
+	addrsize = sizeof(struct sockaddr_in);
 #endif
-	if (bind(sock, (struct sockaddr *) &localaddr, sizeof(localaddr)))
+	if (bind(sock, (struct sockaddr *) &localaddr, addrsize))
 	{
 		ereport(LOG,
 				(errmsg("could not bind local RADIUS socket: %m")));
