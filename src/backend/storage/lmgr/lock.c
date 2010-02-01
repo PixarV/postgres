@@ -815,6 +815,13 @@ LockAcquireExtended(const LOCKTAG *locktag,
 		}
 
 		/*
+		 * In Hot Standby perform early deadlock detection in normal backends.
+		 * If deadlock found we release partition lock but do not return.
+		 */
+		if (RecoveryInProgress() && !InRecovery)
+			CheckRecoveryConflictDeadlock(partitionLock);
+
+		/*
 		 * Set bitmask of locks this process already holds on this object.
 		 */
 		MyProc->heldLocks = proclock->holdMask;
@@ -1790,7 +1797,7 @@ LockReassignCurrentOwner(void)
 VirtualTransactionId *
 GetLockConflicts(const LOCKTAG *locktag, LOCKMODE lockmode)
 {
-	static VirtualTransactionId *vxids = NULL;
+	static VirtualTransactionId *vxids;
 	LOCKMETHODID lockmethodid = locktag->locktag_lockmethodid;
 	LockMethod	lockMethodTable;
 	LOCK	   *lock;
@@ -1810,24 +1817,18 @@ GetLockConflicts(const LOCKTAG *locktag, LOCKMODE lockmode)
 	/*
 	 * Allocate memory to store results, and fill with InvalidVXID.  We only
 	 * need enough space for MaxBackends + a terminator, since prepared xacts
-	 * don't count.
+	 * don't count. InHotStandby allocate once in TopMemoryContext.
 	 */
-	if (!InHotStandby)
-		vxids = (VirtualTransactionId *)
-			palloc0(sizeof(VirtualTransactionId) * (MaxBackends + 1));
-	else
+	if (InHotStandby)
 	{
 		if (vxids == NULL)
-		{
 			vxids = (VirtualTransactionId *)
-				malloc(sizeof(VirtualTransactionId) * (MaxBackends + 1));
-			if (vxids == NULL)
-				ereport(ERROR,
-					(errcode(ERRCODE_OUT_OF_MEMORY),
-					 errmsg("out of memory")));
-
-		}
+				MemoryContextAlloc(TopMemoryContext,
+					sizeof(VirtualTransactionId) * (MaxBackends + 1));
 	}
+	else
+		vxids = (VirtualTransactionId *)
+			palloc0(sizeof(VirtualTransactionId) * (MaxBackends + 1));
 
 	/*
 	 * Look up the lock object matching the tag.

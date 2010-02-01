@@ -2829,6 +2829,16 @@ DATA(insert OID = 2816 (  float8_covar_samp			PGNSP PGUID 12 1 0 0 f f f t f i 1
 DESCR("COVAR_SAMP(double, double) aggregate final function");
 DATA(insert OID = 2817 (  float8_corr				PGNSP PGUID 12 1 0 0 f f f t f i 1 0 701 "1022" _null_ _null_ _null_ _null_ float8_corr _null_ _null_ _null_ ));
 DESCR("CORR(double, double) aggregate final function");
+DATA(insert OID = 3534 (  string_agg_transfn		PGNSP PGUID 12 1 0 0 f f f f f i 2 0 2281 "2281 25" _null_ _null_ _null_ _null_ string_agg_transfn _null_ _null_ _null_ ));
+DESCR("string_agg(text) transition function");
+DATA(insert OID = 3535 (  string_agg_delim_transfn	PGNSP PGUID 12 1 0 0 f f f f f i 3 0 2281 "2281 25 25" _null_ _null_ _null_ _null_ string_agg_delim_transfn _null_ _null_ _null_ ));
+DESCR("string_agg(text, text) transition function");
+DATA(insert OID = 3536 (  string_agg_finalfn		PGNSP PGUID 12 1 0 0 f f f f f i 1 0 25 "2281" _null_ _null_ _null_ _null_ string_agg_finalfn _null_ _null_ _null_ ));
+DESCR("string_agg final function");
+DATA(insert OID = 3537 (  string_agg				PGNSP PGUID 12 1 0 0 t f f f f i 1 0 25 "25" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("concatenate aggregate input into an string");
+DATA(insert OID = 3538 (  string_agg				PGNSP PGUID 12 1 0 0 t f f f f i 2 0 25 "25 25" _null_ _null_ _null_ _null_ aggregate_dummy _null_ _null_ _null_ ));
+DESCR("concatenate aggregate input into an string with delimiter");
 
 /* To ASCII conversion */
 DATA(insert OID = 1845 ( to_ascii	PGNSP PGUID 12 1 0 0 f f f t f i 1 0 25 "25" _null_ _null_ _null_ _null_	to_ascii_default _null_ _null_ _null_ ));
@@ -3087,6 +3097,10 @@ DATA(insert OID = 2274 (  pg_stat_reset					PGNSP PGUID 12 1 0 0 f f f f f v 0 0
 DESCR("statistics: reset collected statistics for current database");
 DATA(insert OID = 3775 (  pg_stat_reset_shared			PGNSP PGUID 12 1 0 0 f f f f f v 1 0 2278 "25" _null_ _null_ _null_ _null_	pg_stat_reset_shared _null_ _null_ _null_ ));
 DESCR("statistics: reset collected statistics shared across the cluster");
+DATA(insert OID = 3776 (  pg_stat_reset_single_table_counters	PGNSP PGUID 12 1 0 0 f f f f f v 1 0 2278 "26" _null_ _null_ _null_ _null_  pg_stat_reset_single_table_counters _null_ _null_ _null_ ));
+DESCR("statistics: reset collected statistics for a single table or index in the current database");
+DATA(insert OID = 3777 (  pg_stat_reset_single_function_counters	PGNSP PGUID 12 1 0 0 f f f f f v 1 0 2278 "26" _null_ _null_ _null_ _null_  pg_stat_reset_single_function_counters _null_ _null_ _null_ ));
+DESCR("statistics: reset collected statistics for a single function in the current database");
 
 DATA(insert OID = 1946 (  encode						PGNSP PGUID 12 1 0 0 f f f t f i 2 0 25 "17 25" _null_ _null_ _null_ _null_ binary_encode _null_ _null_ _null_ ));
 DESCR("convert bytea value into some ascii-only text string");

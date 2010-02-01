@@ -71,6 +71,7 @@ bool		XLogArchiveMode = false;
 char	   *XLogArchiveCommand = NULL;
 bool 		XLogRequestRecoveryConnections = true;
 int			MaxStandbyDelay = 30;
+bool		MinimizeStandbyConflicts = false;
 bool		fullPageWrites = true;
 bool		log_checkpoints = false;
 int			sync_method = DEFAULT_SYNC_METHOD;
@@ -2760,7 +2761,7 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 	uint32		restartSeg;
 
 	/* In standby mode, restore_command might not be supplied */
-	if (StandbyMode && recoveryRestoreCommand == NULL)
+	if (recoveryRestoreCommand == NULL)
 		goto not_available;
 
 	/*

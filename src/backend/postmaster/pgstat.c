@@ -271,6 +271,7 @@ static void pgstat_recv_tabpurge(PgStat_MsgTabpurge *msg, int len);
 static void pgstat_recv_dropdb(PgStat_MsgDropdb *msg, int len);
 static void pgstat_recv_resetcounter(PgStat_MsgResetcounter *msg, int len);
 static void pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len);
+static void pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len);
 static void pgstat_recv_autovac(PgStat_MsgAutovacStart *msg, int len);
 static void pgstat_recv_vacuum(PgStat_MsgVacuum *msg, int len);
 static void pgstat_recv_analyze(PgStat_MsgAnalyze *msg, int len);
@@ -352,7 +353,7 @@ pgstat_init(void)
 		/*
 		 * Create the socket.
 		 */
-		if ((pgStatSock = socket(addr->ai_family, SOCK_DGRAM, 0)) < 0)
+		if ((pgStatSock = socket(addr->ai_family, SOCK_DGRAM, 0)) == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
 					(errcode_for_socket_access(),
@@ -493,7 +494,7 @@ retry2:
 	}
 
 	/* Did we find a working address? */
-	if (!addr || pgStatSock < 0)
+	if (!addr || pgStatSock == PGINVALID_SOCKET)
 		goto startup_failed;
 
 	/*
@@ -520,7 +521,7 @@ startup_failed:
 	if (addrs)
 		pg_freeaddrinfo_all(hints.ai_family, addrs);
 
-	if (pgStatSock >= 0)
+	if (pgStatSock != PGINVALID_SOCKET)
 		closesocket(pgStatSock);
 	pgStatSock = PGINVALID_SOCKET;
 
@@ -591,7 +592,7 @@ pgstat_start(void)
 	 * Check that the socket is there, else pgstat_init failed and we can do
 	 * nothing useful.
 	 */
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return 0;
 
 	/*
@@ -767,7 +768,7 @@ pgstat_send_tabstat(PgStat_MsgTabstat *tsmsg)
 	int			len;
 
 	/* It's unlikely we'd get here with no socket, but maybe not impossible */
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	/*
@@ -869,7 +870,7 @@ pgstat_vacuum_stat(void)
 	PgStat_StatFuncEntry *funcentry;
 	int			len;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	/*
@@ -1088,7 +1089,7 @@ pgstat_drop_database(Oid databaseid)
 {
 	PgStat_MsgDropdb msg;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_DROPDB);
@@ -1115,7 +1116,7 @@ pgstat_drop_relation(Oid relid)
 	PgStat_MsgTabpurge msg;
 	int			len;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	msg.m_tableid[0] = relid;
@@ -1141,7 +1142,7 @@ pgstat_reset_counters(void)
 {
 	PgStat_MsgResetcounter msg;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	if (!superuser())
@@ -1165,7 +1166,7 @@ pgstat_reset_shared_counters(const char *target)
 {
 	PgStat_MsgResetsharedcounter msg;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	if (!superuser())
@@ -1188,6 +1189,32 @@ pgstat_reset_shared_counters(const char *target)
 }
 
 /* ----------
+ * pgstat_reset_single_counter() -
+ *
+ *	Tell the statistics collector to reset a single counter.
+ * ----------
+ */
+void pgstat_reset_single_counter(Oid objoid, PgStat_Single_Reset_Type type)
+{
+	PgStat_MsgResetsinglecounter msg;
+
+	if (pgStatSock == PGINVALID_SOCKET)
+		return;
+
+	if (!superuser())
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("must be superuser to reset statistics counters")));
+
+	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_RESETSINGLECOUNTER);
+	msg.m_databaseid = MyDatabaseId;
+	msg.m_resettype = type;
+	msg.m_objectid = objoid;
+
+	pgstat_send(&msg, sizeof(msg));
+}
+
+/* ----------
  * pgstat_report_autovac() -
  *
  *	Called from autovacuum.c to report startup of an autovacuum process.
@@ -1200,7 +1227,7 @@ pgstat_report_autovac(Oid dboid)
 {
 	PgStat_MsgAutovacStart msg;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_AUTOVAC_START);
@@ -1223,7 +1250,7 @@ pgstat_report_vacuum(Oid tableoid, bool shared, bool adopt_counts,
 {
 	PgStat_MsgVacuum msg;
 
-	if (pgStatSock < 0 || !pgstat_track_counts)
+	if (pgStatSock == PGINVALID_SOCKET || !pgstat_track_counts)
 		return;
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_VACUUM);
@@ -1248,7 +1275,7 @@ pgstat_report_analyze(Relation rel, bool adopt_counts,
 {
 	PgStat_MsgAnalyze msg;
 
-	if (pgStatSock < 0 || !pgstat_track_counts)
+	if (pgStatSock == PGINVALID_SOCKET || !pgstat_track_counts)
 		return;
 
 	/*
@@ -1300,7 +1327,7 @@ pgstat_ping(void)
 {
 	PgStat_MsgDummy msg;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	pgstat_setheader(&msg.m_hdr, PGSTAT_MTYPE_DUMMY);
@@ -1458,7 +1485,7 @@ pgstat_initstats(Relation rel)
 		return;
 	}
 
-	if (pgStatSock < 0 || !pgstat_track_counts)
+	if (pgStatSock == PGINVALID_SOCKET || !pgstat_track_counts)
 	{
 		/* We're not counting at all */
 		rel->pgstat_info = NULL;
@@ -2664,7 +2691,7 @@ pgstat_send(void *msg, int len)
 {
 	int			rc;
 
-	if (pgStatSock < 0)
+	if (pgStatSock == PGINVALID_SOCKET)
 		return;
 
 	((PgStat_MsgHdr *) msg)->m_size = len;
@@ -2951,6 +2978,12 @@ PgstatCollectorMain(int argc, char *argv[])
 				case PGSTAT_MTYPE_RESETSHAREDCOUNTER:
 					pgstat_recv_resetsharedcounter(
 											 (PgStat_MsgResetsharedcounter *) &msg,
+											 len);
+					break;
+
+				case PGSTAT_MTYPE_RESETSINGLECOUNTER:
+					pgstat_recv_resetsinglecounter(
+											 (PgStat_MsgResetsinglecounter *) &msg,
 											 len);
 					break;
 
@@ -3926,6 +3959,30 @@ pgstat_recv_resetsharedcounter(PgStat_MsgResetsharedcounter *msg, int len)
 	 * Presumably the sender of this message validated the target, don't
 	 * complain here if it's not valid
 	 */
+}
+
+/* ----------
+ * pgstat_recv_resetsinglecounter() -
+ *
+ *	Reset a statistics for a single object
+ * ----------
+ */
+static void
+pgstat_recv_resetsinglecounter(PgStat_MsgResetsinglecounter *msg, int len)
+{
+	PgStat_StatDBEntry *dbentry;
+
+	dbentry = pgstat_get_db_entry(msg->m_databaseid, false);
+
+	if (!dbentry)
+		return;
+
+
+	/* Remove object if it exists, ignore it if not */
+	if (msg->m_resettype == RESET_TABLE)
+		(void) hash_search(dbentry->tables, (void *) &(msg->m_objectid), HASH_REMOVE, NULL);
+	else if (msg->m_resettype == RESET_FUNCTION)
+		(void) hash_search(dbentry->functions, (void *)&(msg->m_objectid), HASH_REMOVE, NULL);
 }
 
 /* ----------
