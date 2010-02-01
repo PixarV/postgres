@@ -2736,12 +2736,14 @@ CheckRADIUSAuth(Port *port)
 	if (remoteaddr.sin_port != htons(port->hba->radiusport))
 #endif
 	{
+#ifdef HAVE_IPV6
 		ereport(LOG,
 				(errmsg("RADIUS response was sent from incorrect port: %i",
-#ifdef HAVE_IPV6
 						ntohs(remoteaddr.sin6_port))));
 #else
-						ntohs(remoteaddr.sin_port)))));
+		ereport(LOG,
+				(errmsg("RADIUS response was sent from incorrect port: %i",
+						ntohs(remoteaddr.sin_port))));
 #endif
 		return STATUS_ERROR;
 	}
