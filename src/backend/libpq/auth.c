@@ -2741,7 +2741,7 @@ CheckRADIUSAuth(Port *port)
 #ifdef HAVE_IPV6
 						ntohs(remoteaddr.sin6_port))));
 #else
-						ntohs(remoteaddr.sin_port))));
+						ntohs(remoteaddr.sin_port)))));
 #endif
 		return STATUS_ERROR;
 	}
