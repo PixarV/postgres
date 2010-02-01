@@ -2566,7 +2566,7 @@ CheckRADIUSAuth(Port *port)
 	if (r || !serveraddrs)
 	{
 		ereport(LOG,
-				(errmsg("could not translate RADIUS server name '%s' to address: %s",
+				(errmsg("could not translate RADIUS server name \"%s\" to address: %s",
 						port->hba->radiusserver, gai_strerror(r))));
 		if (serveraddrs)
 			pg_freeaddrinfo_all(hint.ai_family, serveraddrs);

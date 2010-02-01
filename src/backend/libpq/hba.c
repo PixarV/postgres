@@ -1177,7 +1177,7 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				{
 					ereport(LOG,
 							(errcode(ERRCODE_CONFIG_FILE_ERROR),
-							 errmsg("could not translate RADIUS server name '%s' to address: %s",
+							 errmsg("could not translate RADIUS server name \"%s\" to address: %s",
 									c, gai_strerror(ret)),
 						   errcontext("line %d of configuration file \"%s\"",
 									  line_num, HbaFileName)));
