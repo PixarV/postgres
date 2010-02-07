@@ -1789,6 +1789,10 @@
     </tgroup>
    </table>
 
+   <para>
+   See also the aggregate function <function>string_agg</function> in
+   <xref linkend="functions-aggregate">.
+   </para>
 
    <table id="conversion-names">
     <title>Built-in Conversions</title>
@@ -9837,6 +9841,25 @@ SELECT NULLIF(value, '(none)') ...
      </row>
 
      <row>
+      <entry>
+       <indexterm>
+        <primary>string_agg</primary>
+       </indexterm>
+       <function>
+         string_agg(<replaceable class="parameter">expression</replaceable> 
+                    [, <replaceable class="parameter">delimiter</replaceable> ] )
+       </function>
+      </entry>
+      <entry>
+       <type>text</type>
+      </entry>
+      <entry>
+       <type>text</type>
+      </entry>
+      <entry>input values concatenated into a string, optionally with delimiters</entry>
+     </row>
+
+     <row>
       <entry><function>sum(<replaceable class="parameter">expression</replaceable>)</function></entry>
       <entry>
        <type>smallint</type>, <type>int</type>,
@@ -9922,7 +9945,8 @@ SELECT count(*) FROM sometable;
   </note>
 
   <para>
-   The aggregate functions <function>array_agg</function>
+   The aggregate functions <function>array_agg</function>,
+   <function>string_agg</function>,
    and <function>xmlagg</function>, as well as similar user-defined
    aggregate functions, produce meaningfully different result values
    depending on the order of the input values.  This ordering is
