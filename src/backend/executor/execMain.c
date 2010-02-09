@@ -2168,6 +2168,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  NIL,
 											  RELKIND_RELATION,
 											  false,
+											  false,
 											  true,
 											  0,
 											  into->onCommit,
@@ -2240,7 +2241,13 @@ CloseIntoRel(QueryDesc *queryDesc)
 
 		/* If we skipped using WAL, must heap_sync before commit */
 		if (myState->hi_options & HEAP_INSERT_SKIP_WAL)
+		{
+			char reason[NAMEDATALEN + 30];
+			snprintf(reason, sizeof(reason), "SELECT INTO on \"%s\"",
+					 RelationGetRelationName(myState->rel));
+			XLogReportUnloggedStatement(reason);
 			heap_sync(myState->rel);
+		}
 
 		/* close rel, but keep lock until commit */
 		heap_close(myState->rel, NoLock);

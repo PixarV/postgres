@@ -53,6 +53,7 @@
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/ps_status.h"
+#include "utils/relmapper.h"
 #include "pg_trace.h"
 
 
@@ -2103,32 +2104,6 @@ XLogBackgroundFlush(void)
 	LWLockRelease(WALWriteLock);
 
 	END_CRIT_SECTION();
-}
-
-/*
- * Flush any previous asynchronously-committed transactions' commit records.
- *
- * NOTE: it is unwise to assume that this provides any strong guarantees.
- * In particular, because of the inexact LSN bookkeeping used by clog.c,
- * we cannot assume that hint bits will be settable for these transactions.
- */
-void
-XLogAsyncCommitFlush(void)
-{
-	XLogRecPtr	WriteRqstPtr;
-
-	/* use volatile pointer to prevent code rearrangement */
-	volatile XLogCtlData *xlogctl = XLogCtl;
-
-	/* There's no asynchronously committed transactions during recovery */
-	if (RecoveryInProgress())
-		return;
-
-	SpinLockAcquire(&xlogctl->info_lck);
-	WriteRqstPtr = xlogctl->asyncCommitLSN;
-	SpinLockRelease(&xlogctl->info_lck);
-
-	XLogFlush(WriteRqstPtr);
 }
 
 /*
@@ -5681,11 +5656,6 @@ StartupXLOG(void)
 			if (XLByteLT(ControlFile->minRecoveryPoint, checkPoint.redo))
 				ControlFile->minRecoveryPoint = checkPoint.redo;
 		}
-		else
-		{
-			XLogRecPtr	InvalidXLogRecPtr = {0, 0};
-			ControlFile->minRecoveryPoint = InvalidXLogRecPtr;
-		}
 		/*
 		 * set backupStartupPoint if we're starting archive recovery from a
 		 * base backup
@@ -7123,6 +7093,7 @@ CheckPointGuts(XLogRecPtr checkPointRedo, int flags)
 	CheckPointCLOG();
 	CheckPointSUBTRANS();
 	CheckPointMultiXact();
+	CheckPointRelationMap();
 	CheckPointBuffers(flags);	/* performs all required fsyncs */
 	/* We deliberately delay 2PC checkpointing as long as possible */
 	CheckPointTwoPhase(checkPointRedo);

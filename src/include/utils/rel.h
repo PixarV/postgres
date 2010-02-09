@@ -203,6 +203,16 @@ typedef struct RelationData
 	void	   *rd_amcache;		/* available for use by index AM */
 
 	/*
+	 * Hack for CLUSTER, rewriting ALTER TABLE, etc: when writing a new
+	 * version of a table, we need to make any toast pointers inserted into it
+	 * have the existing toast table's OID, not the OID of the transient toast
+	 * table.  If rd_toastoid isn't InvalidOid, it is the OID to place in
+	 * toast pointers inserted into this rel.  (Note it's set on the new
+	 * version of the main heap, not the toast table itself.)
+	 */
+	Oid			rd_toastoid;	/* Real TOAST table's OID, or InvalidOid */
+
+	/*
 	 * sizes of the free space and visibility map forks, or InvalidBlockNumber
 	 * if not known yet
 	 */
@@ -328,6 +338,16 @@ typedef struct StdRdOptions
  */
 #define RelationGetNamespace(relation) \
 	((relation)->rd_rel->relnamespace)
+
+/*
+ * RelationIsMapped
+ *		True if the relation uses the relfilenode map.
+ *
+ * NB: this is only meaningful for relkinds that have storage, else it
+ * will misleadingly say "true".
+ */
+#define RelationIsMapped(relation) \
+	((relation)->rd_rel->relfilenode == InvalidOid)
 
 /*
  * RelationOpenSmgr

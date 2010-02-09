@@ -48,6 +48,7 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/relmapper.h"
 #include "utils/snapmgr.h"
 #include "pg_trace.h"
 
@@ -250,7 +251,7 @@ static void AbortTransaction(void);
 static void AtAbort_Memory(void);
 static void AtCleanup_Memory(void);
 static void AtAbort_ResourceOwner(void);
-static void AtCommit_LocalCache(void);
+static void AtCCI_LocalCache(void);
 static void AtCommit_Memory(void);
 static void AtStart_Cache(void);
 static void AtStart_Memory(void);
@@ -703,7 +704,7 @@ CommandCounterIncrement(void)
 		 * read-only command.  (But see hacks in inval.c to make real sure we
 		 * don't think a command that queued inval messages was read-only.)
 		 */
-		AtCommit_LocalCache();
+		AtCCI_LocalCache();
 	}
 
 	/*
@@ -880,11 +881,9 @@ AtSubStart_ResourceOwner(void)
  *
  * Returns latest XID among xact and its children, or InvalidTransactionId
  * if the xact has no XID.	(We compute that here just because it's easier.)
- *
- * This is exported only to support an ugly hack in VACUUM FULL.
  */
-TransactionId
-RecordTransactionCommit(bool isVacuumFull)
+static TransactionId
+RecordTransactionCommit(void)
 {
 	TransactionId xid = GetTopTransactionIdIfAny();
 	bool		markXidCommitted = TransactionIdIsValid(xid);
@@ -949,8 +948,6 @@ RecordTransactionCommit(bool isVacuumFull)
 		xlrec.xinfo = 0;
 		if (RelcacheInitFileInval)
 			xlrec.xinfo |= XACT_COMPLETION_UPDATE_RELCACHE_FILE;
-		if (isVacuumFull)
-			xlrec.xinfo |= XACT_COMPLETION_VACUUM_FULL;
 		if (forceSyncCommit)
 			xlrec.xinfo |= XACT_COMPLETION_FORCE_SYNC_COMMIT;
 
@@ -1095,11 +1092,19 @@ cleanup:
 
 
 /*
- *	AtCommit_LocalCache
+ *	AtCCI_LocalCache
  */
 static void
-AtCommit_LocalCache(void)
+AtCCI_LocalCache(void)
 {
+	/*
+	 * Make any pending relation map changes visible.  We must do this
+	 * before processing local sinval messages, so that the map changes
+	 * will get reflected into the relcache when relcache invals are
+	 * processed.
+	 */
+	AtCCI_RelationMap();
+
 	/*
 	 * Make catalog changes visible to me for the next command.
 	 */
@@ -1734,6 +1739,9 @@ CommitTransaction(void)
 	/* Prevent cancel/die interrupt while cleaning up */
 	HOLD_INTERRUPTS();
 
+	/* Commit updates to the relation map --- do this as late as possible */
+	AtEOXact_RelationMap(true);
+
 	/*
 	 * set the current transaction state information appropriately during
 	 * commit processing
@@ -1743,7 +1751,7 @@ CommitTransaction(void)
 	/*
 	 * Here is where we really truly commit.
 	 */
-	latestXid = RecordTransactionCommit(false);
+	latestXid = RecordTransactionCommit();
 
 	TRACE_POSTGRESQL_TRANSACTION_COMMIT(MyProc->lxid);
 
@@ -1980,6 +1988,7 @@ PrepareTransaction(void)
 	AtPrepare_Locks();
 	AtPrepare_PgStat();
 	AtPrepare_MultiXact();
+	AtPrepare_RelationMap();
 
 	/*
 	 * Here is where we really truly prepare.
@@ -2148,10 +2157,11 @@ AbortTransaction(void)
 	/*
 	 * do abort processing
 	 */
-	AfterTriggerEndXact(false);
+	AfterTriggerEndXact(false);			/* 'false' means it's abort */
 	AtAbort_Portals();
-	AtEOXact_LargeObject(false);	/* 'false' means it's abort */
+	AtEOXact_LargeObject(false);
 	AtAbort_Notify();
+	AtEOXact_RelationMap(false);
 
 	/*
 	 * Advertise the fact that we aborted in pg_clog (assuming that we got as
@@ -4360,28 +4370,23 @@ xact_redo_commit(xl_xact_commit *xlrec, TransactionId xid, XLogRecPtr lsn)
 		LWLockRelease(XidGenLock);
 	}
 
-	if (!InHotStandby || XactCompletionVacuumFull(xlrec))
+	if (!InHotStandby)
 	{
 		/*
 		 * Mark the transaction committed in pg_clog.
-		 *
-		 * If InHotStandby and this is the first commit of a VACUUM FULL INPLACE
-		 * we perform only the actual commit to clog. Strangely, there are two
-		 * commits that share the same xid for every VFI, so we need to skip
-		 * some steps for the first commit. It's OK to repeat the clog update
-		 * when we see the second commit on a VFI.
 		 */
 		TransactionIdCommitTree(xid, xlrec->nsubxacts, sub_xids);
 	}
 	else
 	{
 		/*
-		 * If a transaction completion record arrives that has as-yet unobserved
-		 * subtransactions then this will not have been fully handled by the call
-		 * to RecordKnownAssignedTransactionIds() in the main recovery loop in
-		 * xlog.c. So we need to do bookkeeping again to cover that case. This is
-		 * confusing and it is easy to think this call is irrelevant, which has
-		 * happened three times in development already. Leave it in.
+		 * If a transaction completion record arrives that has as-yet
+		 * unobserved subtransactions then this will not have been fully
+		 * handled by the call to RecordKnownAssignedTransactionIds() in the
+		 * main recovery loop in xlog.c. So we need to do bookkeeping again to
+		 * cover that case. This is confusing and it is easy to think this
+		 * call is irrelevant, which has happened three times in development
+		 * already. Leave it in.
 		 */
 		RecordKnownAssignedTransactionIds(max_xid);
 
@@ -4625,11 +4630,18 @@ xact_desc_commit(StringInfo buf, xl_xact_commit *xlrec)
 			SharedInvalidationMessage *msg = &msgs[i];
 
 			if (msg->id >= 0)
-				appendStringInfo(buf,  "catcache id%d ", msg->id);
+				appendStringInfo(buf, " catcache %d", msg->id);
+			else if (msg->id == SHAREDINVALCATALOG_ID)
+				appendStringInfo(buf, " catalog %u", msg->cat.catId);
 			else if (msg->id == SHAREDINVALRELCACHE_ID)
-				appendStringInfo(buf,  "relcache ");
+				appendStringInfo(buf, " relcache %u", msg->rc.relId);
+			/* remaining cases not expected, but print something anyway */
 			else if (msg->id == SHAREDINVALSMGR_ID)
-				appendStringInfo(buf,  "smgr ");
+				appendStringInfo(buf, " smgr");
+			else if (msg->id == SHAREDINVALRELMAP_ID)
+				appendStringInfo(buf, " relmap");
+			else
+				appendStringInfo(buf, " unknown id %d", msg->id);
 		}
 	}
 }

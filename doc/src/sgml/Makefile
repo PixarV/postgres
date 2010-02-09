@@ -263,7 +263,7 @@ MAKEINFO = makeinfo
 ##
 
 # Quick syntax check without style processing
-check: postgres.sgml $(ALMOSTALLSGML)
+check: postgres.sgml $(ALMOSTALLSGML) check-tabs
 	$(NSGMLS) $(SPFLAGS) $(SGMLINCLUDE) -s $<
 
 
@@ -345,6 +345,9 @@ clean-man:
 
 endif # sqlmansectnum != 7
 
+# tabs are harmless, but it is best to avoid them in SGML files
+check-tabs:
+	@( ! grep '	' $(wildcard $(srcdir)/*.sgml $(srcdir)/ref/*.sgml) ) || (echo "Tabs appear in SGML files";  exit 1)
 
 ##
 ## Clean
