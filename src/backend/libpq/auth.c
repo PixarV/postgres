@@ -2507,6 +2507,14 @@ radius_add_attribute(radius_packet *packet, uint8 type, const unsigned char *dat
 	packet->length += attr->length;
 }
 
+/*
+ * MingW defines an extern to this struct, but the actual struct isn't present
+ * in any library. It's trivial enough that we can safely defined it
+ * ourselves.
+ */
+#if defined(WIN32) && !defined(WIN32_ONLY_COMPILER)
+static const struct in6_addr in6addr_any = {{{0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0}}};
+#endif
 static int
 CheckRADIUSAuth(Port *port)
 {
