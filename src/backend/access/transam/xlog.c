@@ -2891,21 +2891,36 @@ RestoreArchivedFile(char *path, const char *xlogfname,
 		/*
 		 * command apparently succeeded, but let's make sure the file is
 		 * really there now and has the correct size.
-		 *
-		 * XXX I made wrong-size a fatal error to ensure the DBA would notice
-		 * it, but is that too strong?	We could try to plow ahead with a
-		 * local copy of the file ... but the problem is that there probably
-		 * isn't one, and we'd incorrectly conclude we've reached the end of
-		 * WAL and we're done recovering ...
 		 */
 		if (stat(xlogpath, &stat_buf) == 0)
 		{
 			if (expectedSize > 0 && stat_buf.st_size != expectedSize)
-				ereport(FATAL,
+			{
+				int elevel;
+
+				/*
+				 * If we find a partial file in standby mode, we assume it's
+				 * because it's just being copied to the archive, and keep
+				 * trying.
+				 *
+				 * Otherwise treat a wrong-sized file as FATAL to ensure the
+				 * DBA would notice it, but is that too strong?	We could try
+				 * to plow ahead with a local copy of the file ... but the
+				 * problem is that there probably isn't one, and we'd
+				 * incorrectly conclude we've reached the end of WAL and
+				 * we're done recovering ...
+				 */
+				if (StandbyMode && stat_buf.st_size < expectedSize)
+					elevel = DEBUG1;
+				else
+					elevel = FATAL;
+				ereport(elevel,
 						(errmsg("archive file \"%s\" has wrong size: %lu instead of %lu",
 								xlogfname,
 								(unsigned long) stat_buf.st_size,
 								(unsigned long) expectedSize)));
+				return false;
+			}
 			else
 			{
 				ereport(LOG,
@@ -4867,9 +4882,6 @@ readRecoveryCommandFile(void)
 						RECOVERY_COMMAND_FILE)));
 	}
 
-	ereport(LOG,
-			(errmsg("starting archive recovery")));
-
 	/*
 	 * Parse the file...
 	 */
@@ -4912,14 +4924,14 @@ readRecoveryCommandFile(void)
 		if (strcmp(tok1, "restore_command") == 0)
 		{
 			recoveryRestoreCommand = pstrdup(tok2);
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("restore_command = '%s'",
 							recoveryRestoreCommand)));
 		}
 		else if (strcmp(tok1, "recovery_end_command") == 0)
 		{
 			recoveryEndCommand = pstrdup(tok2);
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("recovery_end_command = '%s'",
 							recoveryEndCommand)));
 		}
@@ -4938,10 +4950,10 @@ readRecoveryCommandFile(void)
 									tok2)));
 			}
 			if (rtli)
-				ereport(LOG,
+				ereport(DEBUG2,
 						(errmsg("recovery_target_timeline = %u", rtli)));
 			else
-				ereport(LOG,
+				ereport(DEBUG2,
 						(errmsg("recovery_target_timeline = latest")));
 		}
 		else if (strcmp(tok1, "recovery_target_xid") == 0)
@@ -4952,7 +4964,7 @@ readRecoveryCommandFile(void)
 				ereport(FATAL,
 				 (errmsg("recovery_target_xid is not a valid number: \"%s\"",
 						 tok2)));
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("recovery_target_xid = %u",
 							recoveryTargetXid)));
 			recoveryTarget = true;
@@ -4977,7 +4989,7 @@ readRecoveryCommandFile(void)
 														CStringGetDatum(tok2),
 												ObjectIdGetDatum(InvalidOid),
 														Int32GetDatum(-1)));
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("recovery_target_time = '%s'",
 							timestamptz_to_str(recoveryTargetTime))));
 		}
@@ -4990,7 +5002,7 @@ readRecoveryCommandFile(void)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("parameter \"recovery_target_inclusive\" requires a Boolean value")));
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("recovery_target_inclusive = %s", tok2)));
 		}
 		else if (strcmp(tok1, "standby_mode") == 0)
@@ -4999,20 +5011,20 @@ readRecoveryCommandFile(void)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("parameter \"standby_mode\" requires a Boolean value")));
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("standby_mode = '%s'", tok2)));
 		}
 		else if (strcmp(tok1, "primary_conninfo") == 0)
 		{
 			PrimaryConnInfo = pstrdup(tok2);
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("primary_conninfo = '%s'",
 							PrimaryConnInfo)));
 		}
 		else if (strcmp(tok1, "trigger_file") == 0)
 		{
 			TriggerFile = pstrdup(tok2);
-			ereport(LOG,
+			ereport(DEBUG2,
 					(errmsg("trigger_file = '%s'",
 							TriggerFile)));
 		}
@@ -5085,16 +5097,14 @@ exitArchiveRecovery(TimeLineID endTLI, uint32 endLogId, uint32 endLogSeg)
 	UpdateMinRecoveryPoint(InvalidXLogRecPtr, true);
 
 	/*
-	 * We should have the ending log segment currently open.  Verify, and then
-	 * close it (to avoid problems on Windows with trying to rename or delete
-	 * an open file).
+	 * If the ending log segment is still open, close it (to avoid
+	 * problems on Windows with trying to rename or delete an open file).
 	 */
-	Assert(readFile >= 0);
-	Assert(readId == endLogId);
-	Assert(readSeg == endLogSeg);
-
-	close(readFile);
-	readFile = -1;
+	if (readFile >= 0)
+	{
+		close(readFile);
+		readFile = -1;
+	}
 
 	/*
 	 * If the segment was fetched from archival storage, we want to replace
@@ -5636,8 +5646,23 @@ StartupXLOG(void)
 		 */
 		if (InArchiveRecovery)
 		{
-			ereport(LOG,
-					(errmsg("automatic recovery in progress")));
+			if (StandbyMode)
+				ereport(LOG,
+						(errmsg("entering standby mode")));
+			else if (recoveryTarget)
+			{
+				if (recoveryTargetExact)
+					ereport(LOG,
+							(errmsg("starting point-in-time recovery to XID %u",
+									recoveryTargetXid)));
+				else
+					ereport(LOG,
+							(errmsg("starting point-in-time recovery to %s",
+									timestamptz_to_str(recoveryTargetTime))));
+			}
+			else
+				ereport(LOG,
+						(errmsg("starting archive recovery")));
 			ControlFile->state = DB_IN_ARCHIVE_RECOVERY;
 		}
 		else
@@ -5705,8 +5730,8 @@ StartupXLOG(void)
 
 			CheckRequiredParameterValues(checkPoint);
 
-			ereport(LOG,
-				(errmsg("initializing recovery connections")));
+			ereport(DEBUG1,
+					(errmsg("initializing recovery connections")));
 
 			InitRecoveryTransactionEnvironment();
 
@@ -8783,8 +8808,9 @@ XLogPageRead(XLogRecPtr *RecPtr, int emode, bool fetching_ckpt,
 					 * that when we later jump backwards to start redo at
 					 * RedoStartLSN, we will have the logs streamed already.
 					 */
-					RequestXLogStreaming(fetching_ckpt ? RedoStartLSN : *RecPtr,
-										 PrimaryConnInfo);
+					if (PrimaryConnInfo)
+						RequestXLogStreaming(fetching_ckpt ? RedoStartLSN : *RecPtr,
+											 PrimaryConnInfo);
 				}
 
 				/*
