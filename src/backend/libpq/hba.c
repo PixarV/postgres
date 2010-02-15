@@ -1207,6 +1207,11 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 				REQUIRE_AUTH_OPTION(uaRADIUS, "radiussecret", "radius");
 				parsedline->radiussecret = pstrdup(c);
 			}
+			else if (strcmp(token, "radiussecretfile") == 0)
+			{
+				REQUIRE_AUTH_OPTION(uaRADIUS, "radiussecretfile", "radius");
+				parsedline->radiussecretfile = pstrdup(c);
+			}
 			else if (strcmp(token, "radiusidentifier") == 0)
 			{
 				REQUIRE_AUTH_OPTION(uaRADIUS, "radiusidentifier", "radius");
@@ -1267,7 +1272,24 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 	if (parsedline->auth_method == uaRADIUS)
 	{
 		MANDATORY_AUTH_ARG(parsedline->radiusserver, "radiusserver", "radius");
-		MANDATORY_AUTH_ARG(parsedline->radiussecret, "radiussecret", "radius");
+		if (!(parsedline->radiussecret || parsedline->radiussecretfile))
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("authentication method \"radius\" requires argument \"radiussecret\" or \"radiussecretfile\" to be set"),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			return false;
+		}
+		if (parsedline->radiussecret && parsedline->radiussecretfile)
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("cannot use \"radiussecretfile\" together with \"radiussecret\""),
+					 errcontext("line %d of configuration file \"%s\"",
+								line_num, HbaFileName)));
+			return false;
+		}
 	}
 
 	/*

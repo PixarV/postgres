@@ -74,6 +74,7 @@ typedef struct
 	bool		include_realm;
 	char	   *radiusserver;
 	char	   *radiussecret;
+	char	   *radiussecretfile;
 	char	   *radiusidentifier;
 	int			radiusport;
 } HbaLine;

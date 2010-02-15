@@ -37,6 +37,7 @@
 #include "libpq/md5.h"
 #include "miscadmin.h"
 #include "storage/ipc.h"
+#include "storage/fd.h"
 
 
 /*----------------------------------------------------------------
@@ -2511,6 +2512,8 @@ static int
 CheckRADIUSAuth(Port *port)
 {
 	char			   *passwd;
+	char			   *secret;
+	char				local_secret[RADIUS_BUFFER_SIZE];
 	char			   *identifier = "postgresql";
 	char				radius_buffer[RADIUS_BUFFER_SIZE];
 	char				receive_buffer[RADIUS_BUFFER_SIZE];
@@ -2547,12 +2550,49 @@ CheckRADIUSAuth(Port *port)
 		return STATUS_ERROR;
 	}
 
-	if (!port->hba->radiussecret || port->hba->radiussecret[0] == '\0')
+	if ((!port->hba->radiussecret || port->hba->radiussecret[0] == '\0') &&
+		(!port->hba->radiussecretfile || port->hba->radiussecretfile[0] == '\0'))
 	{
 		ereport(LOG,
 				(errmsg("RADIUS secret not specified")));
 		return STATUS_ERROR;
 	}
+
+	if (port->hba->radiussecretfile)
+	{
+		FILE *f;
+		/*
+		 * RADIUS secret is in a file. Read it into a temporary buffer and use
+		 * that.
+		 */
+		f = AllocateFile(port->hba->radiussecretfile, "r");
+		if (!f)
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					errmsg("could not open RADIUS secret file \"%s\": %m",
+						   port->hba->radiussecretfile)));
+			return STATUS_ERROR;
+		}
+		if (!fgets(local_secret, sizeof(local_secret), f))
+		{
+			ereport(LOG,
+					(errcode(ERRCODE_CONFIG_FILE_ERROR),
+					 errmsg("could not read from RADIUS secret file \"%s\": %m",
+							port->hba->radiussecretfile)));
+			FreeFile(f);
+			return STATUS_ERROR;
+		}
+		FreeFile(f);
+		while (strlen(local_secret) &&
+			   (local_secret[strlen(local_secret)-1] == '\n' ||
+				local_secret[strlen(local_secret)-1] == '\r'))
+			local_secret[strlen(local_secret)-1] = '\0';
+
+		secret = local_secret;
+	}
+	else
+		secret = port->hba->radiussecret;
 
 	if (port->hba->radiusport == 0)
 		port->hba->radiusport = 1812;
@@ -2622,10 +2662,10 @@ CheckRADIUSAuth(Port *port)
 	 * RADIUS password attributes are calculated as:
 	 * e[0] = p[0] XOR MD5(secret + vector)
 	 */
-	cryptvector = palloc(RADIUS_VECTOR_LENGTH + strlen(port->hba->radiussecret));
-	memcpy(cryptvector, port->hba->radiussecret, strlen(port->hba->radiussecret));
-	memcpy(cryptvector + strlen(port->hba->radiussecret), packet->vector, RADIUS_VECTOR_LENGTH);
-	if (!pg_md5_binary(cryptvector, RADIUS_VECTOR_LENGTH + strlen(port->hba->radiussecret), encryptedpassword))
+	cryptvector = palloc(RADIUS_VECTOR_LENGTH + strlen(secret));
+	memcpy(cryptvector, secret, strlen(secret));
+	memcpy(cryptvector + strlen(secret), packet->vector, RADIUS_VECTOR_LENGTH);
+	if (!pg_md5_binary(cryptvector, RADIUS_VECTOR_LENGTH + strlen(secret), encryptedpassword))
 	{
 		ereport(LOG,
 				(errmsg("could not perform md5 encryption of password")));
@@ -2780,16 +2820,16 @@ CheckRADIUSAuth(Port *port)
 	 * Verify the response authenticator, which is calculated as
 	 * MD5(Code+ID+Length+RequestAuthenticator+Attributes+Secret)
 	 */
-	cryptvector = palloc(packetlength + strlen(port->hba->radiussecret));
+	cryptvector = palloc(packetlength + strlen(secret));
 
 	memcpy(cryptvector, receivepacket, 4);		/* code+id+length */
 	memcpy(cryptvector+4, packet->vector, RADIUS_VECTOR_LENGTH);	/* request authenticator, from original packet */
 	if (packetlength > RADIUS_HEADER_LENGTH)	/* there may be no attributes at all */
 		memcpy(cryptvector+RADIUS_HEADER_LENGTH, receive_buffer + RADIUS_HEADER_LENGTH, packetlength-RADIUS_HEADER_LENGTH);
-	memcpy(cryptvector+packetlength, port->hba->radiussecret, strlen(port->hba->radiussecret));
+	memcpy(cryptvector+packetlength, secret, strlen(secret));
 
 	if (!pg_md5_binary(cryptvector,
-					   packetlength + strlen(port->hba->radiussecret),
+					   packetlength + strlen(secret),
 					   encryptedpassword))
 	{
 		ereport(LOG,

@@ -1408,6 +1408,18 @@ ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"
       </varlistentry>
 
       <varlistentry>
+       <term><literal>radiussecretfile</literal></term>
+       <listitem>
+        <para>
+         Read the shared secret from the file specified. This file will be
+         read every time authentication is attempted, and should contain the
+         secret without any quotes. This parameter cannot be used together
+         with radiussecret.
+        </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
        <term><literal>radiusport</literal></term>
        <listitem>
         <para>
