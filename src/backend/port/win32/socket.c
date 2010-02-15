@@ -13,6 +13,14 @@
 
 #include "postgres.h"
 
+/*
+ * This indicates whether pgwin32_recv() is blocked until the receive
+ * operation has been finished. A value of zero blocks it even if
+ * the socket is set to non-blocking mode. A non-zero value makes it
+ * return immediately whether data is available or not.
+ */
+int	pgwin32_noblock = 0;
+
 #undef socket
 #undef accept
 #undef connect
@@ -315,7 +323,8 @@ pgwin32_recv(SOCKET s, char *buf, int len, int f)
 	for (n = 0; n < 5; n++)
 	{
 		if (pgwin32_waitforsinglesocket(s, FD_READ | FD_CLOSE | FD_ACCEPT,
-										INFINITE) == 0)
+										(pgwin32_noblock == 0) ? INFINITE : 0)
+			== 0)
 			return -1;			/* errno already set */
 
 		r = WSARecv(s, &wbuf, 1, &b, &flags, NULL, NULL);
