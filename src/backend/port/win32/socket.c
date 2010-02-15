@@ -19,7 +19,7 @@
  * the socket is set to non-blocking mode. A non-zero value makes it
  * return immediately whether data is available or not.
  */
-int	pgwin32_noblock = 0;
+bool pgwin32_noblock = 0;
 
 #undef socket
 #undef accept
