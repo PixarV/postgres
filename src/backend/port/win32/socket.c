@@ -318,13 +318,22 @@ pgwin32_recv(SOCKET s, char *buf, int len, int f)
 		return -1;
 	}
 
+	if (pgwin32_noblock)
+	{
+		/*
+		 * No data received, and we are in "emulated non-blocking mode", so return
+		 * indicating thta we'd block if we were to continue.
+		 */
+		errno = EWOULDBLOCK;
+		return -1;
+	}
+
 	/* No error, zero bytes (win2000+) or error+WSAEWOULDBLOCK (<=nt4) */
 
 	for (n = 0; n < 5; n++)
 	{
 		if (pgwin32_waitforsinglesocket(s, FD_READ | FD_CLOSE | FD_ACCEPT,
-										(pgwin32_noblock == 0) ? INFINITE : 0)
-			== 0)
+										INFINITE) == 0)
 			return -1;			/* errno already set */
 
 		r = WSARecv(s, &wbuf, 1, &b, &flags, NULL, NULL);
