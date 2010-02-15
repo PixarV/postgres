@@ -33,6 +33,7 @@
 #include "access/genam.h"
 #include "access/reloptions.h"
 #include "access/sysattr.h"
+#include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/index.h"
@@ -53,6 +54,7 @@
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "catalog/schemapg.h"
+#include "catalog/storage.h"
 #include "commands/trigger.h"
 #include "miscadmin.h"
 #include "optimizer/clauses.h"
@@ -70,6 +72,7 @@
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/relcache.h"
+#include "utils/relmapper.h"
 #include "utils/resowner.h"
 #include "utils/syscache.h"
 #include "utils/tqual.h"
@@ -324,13 +327,6 @@ AllocateRelationDesc(Form_pg_class relp)
 	 * allocate and zero space for new relation descriptor
 	 */
 	relation = (Relation) palloc0(sizeof(RelationData));
-
-	/*
-	 * clear fields of reldesc that should initialize to something non-zero
-	 */
-	relation->rd_targblock = InvalidBlockNumber;
-	relation->rd_fsm_nblocks = InvalidBlockNumber;
-	relation->rd_vm_nblocks = InvalidBlockNumber;
 
 	/* make sure relation is marked as having no open file yet */
 	relation->rd_smgr = NULL;
@@ -836,6 +832,7 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 */
 	relid = HeapTupleGetOid(pg_class_tuple);
 	relp = (Form_pg_class) GETSTRUCT(pg_class_tuple);
+	Assert(relid == targetRelId);
 
 	/*
 	 * allocate storage for the relation descriptor, and copy pg_class_tuple
@@ -925,6 +922,10 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 
 /*
  * Initialize the physical addressing info (RelFileNode) for a relcache entry
+ *
+ * Note: at the physical level, relations in the pg_global tablespace must
+ * be treated as shared, even if relisshared isn't set.  Hence we do not
+ * look at relisshared here.
  */
 static void
 RelationInitPhysicalAddr(Relation relation)
@@ -933,11 +934,22 @@ RelationInitPhysicalAddr(Relation relation)
 		relation->rd_node.spcNode = relation->rd_rel->reltablespace;
 	else
 		relation->rd_node.spcNode = MyDatabaseTableSpace;
-	if (relation->rd_rel->relisshared)
+	if (relation->rd_node.spcNode == GLOBALTABLESPACE_OID)
 		relation->rd_node.dbNode = InvalidOid;
 	else
 		relation->rd_node.dbNode = MyDatabaseId;
-	relation->rd_node.relNode = relation->rd_rel->relfilenode;
+	if (relation->rd_rel->relfilenode)
+		relation->rd_node.relNode = relation->rd_rel->relfilenode;
+	else
+	{
+		/* Consult the relation mapper */
+		relation->rd_node.relNode =
+			RelationMapOidToFilenode(relation->rd_id,
+									 relation->rd_rel->relisshared);
+		if (!OidIsValid(relation->rd_node.relNode))
+			elog(ERROR, "could not find relation mapping for relation \"%s\", OID %u",
+				 RelationGetRelationName(relation), relation->rd_id);
+	}
 }
 
 /*
@@ -964,9 +976,8 @@ RelationInitIndexAccessInfo(Relation relation)
 	 * contains variable-length and possibly-null fields, we have to do this
 	 * honestly rather than just treating it as a Form_pg_index struct.
 	 */
-	tuple = SearchSysCache(INDEXRELID,
-						   ObjectIdGetDatum(RelationGetRelid(relation)),
-						   0, 0, 0);
+	tuple = SearchSysCache1(INDEXRELID,
+						    ObjectIdGetDatum(RelationGetRelid(relation)));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for index %u",
 			 RelationGetRelid(relation));
@@ -979,9 +990,7 @@ RelationInitIndexAccessInfo(Relation relation)
 	/*
 	 * Make a copy of the pg_am entry for the index's access method
 	 */
-	tuple = SearchSysCache(AMOID,
-						   ObjectIdGetDatum(relation->rd_rel->relam),
-						   0, 0, 0);
+	tuple = SearchSysCache1(AMOID, ObjectIdGetDatum(relation->rd_rel->relam));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for access method %u",
 			 relation->rd_rel->relam);
@@ -1394,9 +1403,6 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * allocate new relation desc, clear all fields of reldesc
 	 */
 	relation = (Relation) palloc0(sizeof(RelationData));
-	relation->rd_targblock = InvalidBlockNumber;
-	relation->rd_fsm_nblocks = InvalidBlockNumber;
-	relation->rd_vm_nblocks = InvalidBlockNumber;
 
 	/* make sure relation is marked as having no open file yet */
 	relation->rd_smgr = NULL;
@@ -1494,7 +1500,18 @@ formrdesc(const char *relationName, Oid relationReltype,
 	 * initialize relation id from info in att array (my, this is ugly)
 	 */
 	RelationGetRelid(relation) = relation->rd_att->attrs[0]->attrelid;
-	relation->rd_rel->relfilenode = RelationGetRelid(relation);
+
+	/*
+	 * All relations made with formrdesc are mapped.  This is necessarily so
+	 * because there is no other way to know what filenode they currently
+	 * have.  In bootstrap mode, add them to the initial relation mapper data,
+	 * specifying that the initial filenode is the same as the OID.
+	 */
+	relation->rd_rel->relfilenode = InvalidOid;
+	if (IsBootstrapProcessingMode())
+		RelationMapUpdateMap(RelationGetRelid(relation),
+							 RelationGetRelid(relation),
+							 isshared, true);
 
 	/*
 	 * initialize the relation lock manager information
@@ -1684,14 +1701,7 @@ RelationReloadIndexInfo(Relation relation)
 	/* Should be closed at smgr level */
 	Assert(relation->rd_smgr == NULL);
 
-	/*
-	 * Must reset targblock, fsm_nblocks and vm_nblocks in case rel was
-	 * truncated
-	 */
-	relation->rd_targblock = InvalidBlockNumber;
-	relation->rd_fsm_nblocks = InvalidBlockNumber;
-	relation->rd_vm_nblocks = InvalidBlockNumber;
-	/* Must free any AM cached data, too */
+	/* Must free any AM cached data upon relcache flush */
 	if (relation->rd_amcache)
 		pfree(relation->rd_amcache);
 	relation->rd_amcache = NULL;
@@ -1744,9 +1754,8 @@ RelationReloadIndexInfo(Relation relation)
 		HeapTuple	tuple;
 		Form_pg_index index;
 
-		tuple = SearchSysCache(INDEXRELID,
-							   ObjectIdGetDatum(RelationGetRelid(relation)),
-							   0, 0, 0);
+		tuple = SearchSysCache1(INDEXRELID,
+							 	ObjectIdGetDatum(RelationGetRelid(relation)));
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for index %u",
 				 RelationGetRelid(relation));
@@ -1837,9 +1846,8 @@ RelationClearRelation(Relation relation, bool rebuild)
 
 	/*
 	 * Never, never ever blow away a nailed-in system relation, because we'd
-	 * be unable to recover.  However, we must reset rd_targblock, in case we
-	 * got called because of a relation cache flush that was triggered by
-	 * VACUUM.  Likewise reset the fsm and vm size info.
+	 * be unable to recover.  However, we must redo RelationInitPhysicalAddr
+	 * in case it is a mapped relation whose mapping changed.
 	 *
 	 * If it's a nailed index, then we need to re-read the pg_class row to see
 	 * if its relfilenode changed.	We can't necessarily do that here, because
@@ -1850,9 +1858,8 @@ RelationClearRelation(Relation relation, bool rebuild)
 	 */
 	if (relation->rd_isnailed)
 	{
-		relation->rd_targblock = InvalidBlockNumber;
-		relation->rd_fsm_nblocks = InvalidBlockNumber;
-		relation->rd_vm_nblocks = InvalidBlockNumber;
+		RelationInitPhysicalAddr(relation);
+
 		if (relation->rd_rel->relkind == RELKIND_INDEX)
 		{
 			relation->rd_isvalid = false;		/* needs to be revalidated */
@@ -1880,12 +1887,6 @@ RelationClearRelation(Relation relation, bool rebuild)
 
 	/* Mark it invalid until we've finished rebuild */
 	relation->rd_isvalid = false;
-
-	/*
-	 * Clear out catcache's entries for this relation.  This is a bit of
-	 * a hack, but it's a convenient place to do it.
-	 */
-	CatalogCacheFlushRelation(RelationGetRelid(relation));
 
 	/*
 	 * If we're really done with the relcache entry, blow it away. But if
@@ -1923,13 +1924,13 @@ RelationClearRelation(Relation relation, bool rebuild)
 		 * new entry, and this shouldn't happen often enough for that to be
 		 * a big problem.
 		 *
-		 * When rebuilding an open relcache entry, we must preserve ref count
-		 * and rd_createSubid/rd_newRelfilenodeSubid state.  Also attempt to
-		 * preserve the pg_class entry (rd_rel), tupledesc, and rewrite-rule
-		 * substructures in place, because various places assume that these
-		 * structures won't move while they are working with an open relcache
-		 * entry.  (Note: the refcount mechanism for tupledescs might someday
-		 * allow us to remove this hack for the tupledesc.)
+		 * When rebuilding an open relcache entry, we must preserve ref count,
+		 * rd_createSubid/rd_newRelfilenodeSubid, and rd_toastoid state.  Also
+		 * attempt to preserve the pg_class entry (rd_rel), tupledesc, and
+		 * rewrite-rule substructures in place, because various places assume
+		 * that these structures won't move while they are working with an
+		 * open relcache entry.  (Note: the refcount mechanism for tupledescs
+		 * might someday allow us to remove this hack for the tupledesc.)
 		 *
 		 * Note that this process does not touch CurrentResourceOwner; which
 		 * is good because whatever ref counts the entry may have do not
@@ -2003,6 +2004,8 @@ RelationClearRelation(Relation relation, bool rebuild)
 			SWAPFIELD(RuleLock *, rd_rules);
 			SWAPFIELD(MemoryContext, rd_rulescxt);
 		}
+		/* toast OID override must be preserved */
+		SWAPFIELD(Oid, rd_toastoid);
 		/* pgstat_info must be preserved */
 		SWAPFIELD(struct PgStat_TableStatus *, pgstat_info);
 
@@ -2100,7 +2103,7 @@ RelationCacheInvalidateEntry(Oid relationId)
  * RelationCacheInvalidate
  *	 Blow away cached relation descriptors that have zero reference counts,
  *	 and rebuild those with positive reference counts.	Also reset the smgr
- *	 relation cache.
+ *	 relation cache and re-read relation mapping data.
  *
  *	 This is currently used only to recover from SI message buffer overflow,
  *	 so we do not touch new-in-transaction relations; they cannot be targets
@@ -2186,6 +2189,11 @@ RelationCacheInvalidate(void)
 	 */
 	smgrcloseall();
 
+	/*
+	 * Reload relation mapping data before starting to reconstruct cache.
+	 */
+	RelationMapInvalidateAll();
+
 	/* Phase 2: rebuild the items found to need rebuild in phase 1 */
 	foreach(l, rebuildFirstList)
 	{
@@ -2199,6 +2207,25 @@ RelationCacheInvalidate(void)
 		RelationClearRelation(relation, true);
 	}
 	list_free(rebuildList);
+}
+
+/*
+ * RelationCloseSmgrByOid - close a relcache entry's smgr link
+ *
+ * Needed in some cases where we are changing a relation's physical mapping.
+ * The link will be automatically reopened on next use.
+ */
+void
+RelationCloseSmgrByOid(Oid relationId)
+{
+	Relation	relation;
+
+	RelationIdCacheLookup(relationId, relation);
+
+	if (!PointerIsValid(relation))
+		return;					/* not in cache, nothing to do */
+
+	RelationCloseSmgr(relation);
 }
 
 /*
@@ -2377,22 +2404,6 @@ AtEOSubXact_RelationCache(bool isCommit, SubTransactionId mySubid,
 	}
 }
 
-/*
- * RelationCacheMarkNewRelfilenode
- *
- *	Mark the rel as having been given a new relfilenode in the current
- *	(sub) transaction.	This is a hint that can be used to optimize
- *	later operations on the rel in the same transaction.
- */
-void
-RelationCacheMarkNewRelfilenode(Relation rel)
-{
-	/* Mark it... */
-	rel->rd_newRelfilenodeSubid = GetCurrentSubTransactionId();
-	/* ... and now we have eoxact cleanup work to do */
-	need_eoxact_work = true;
-}
-
 
 /*
  *		RelationBuildLocalRelation
@@ -2405,7 +2416,8 @@ RelationBuildLocalRelation(const char *relname,
 						   TupleDesc tupDesc,
 						   Oid relid,
 						   Oid reltablespace,
-						   bool shared_relation)
+						   bool shared_relation,
+						   bool mapped_relation)
 {
 	Relation	rel;
 	MemoryContext oldcxt;
@@ -2446,6 +2458,9 @@ RelationBuildLocalRelation(const char *relname,
 		elog(ERROR, "shared_relation flag for \"%s\" does not match IsSharedRelation(%u)",
 			 relname, relid);
 
+	/* Shared relations had better be mapped, too */
+	Assert(mapped_relation || !shared_relation);
+
 	/*
 	 * switch to the cache context to create the relcache entry.
 	 */
@@ -2458,10 +2473,6 @@ RelationBuildLocalRelation(const char *relname,
 	 * allocate a new relation descriptor and fill in basic state fields.
 	 */
 	rel = (Relation) palloc0(sizeof(RelationData));
-
-	rel->rd_targblock = InvalidBlockNumber;
-	rel->rd_fsm_nblocks = InvalidBlockNumber;
-	rel->rd_vm_nblocks = InvalidBlockNumber;
 
 	/* make sure relation is marked as having no open file yet */
 	rel->rd_smgr = NULL;
@@ -2524,7 +2535,9 @@ RelationBuildLocalRelation(const char *relname,
 	/*
 	 * Insert relation physical and logical identifiers (OIDs) into the right
 	 * places.	Note that the physical ID (relfilenode) is initially the same
-	 * as the logical ID (OID).
+	 * as the logical ID (OID); except that for a mapped relation, we set
+	 * relfilenode to zero and rely on RelationInitPhysicalAddr to consult
+	 * the map.
 	 */
 	rel->rd_rel->relisshared = shared_relation;
 	rel->rd_rel->relistemp = rel->rd_istemp;
@@ -2534,8 +2547,16 @@ RelationBuildLocalRelation(const char *relname,
 	for (i = 0; i < natts; i++)
 		rel->rd_att->attrs[i]->attrelid = relid;
 
-	rel->rd_rel->relfilenode = relid;
 	rel->rd_rel->reltablespace = reltablespace;
+
+	if (mapped_relation)
+	{
+		rel->rd_rel->relfilenode = InvalidOid;
+		/* Add it to the active mapping information */
+		RelationMapUpdateMap(relid, relid, shared_relation, true);
+	}
+	else
+		rel->rd_rel->relfilenode = relid;
 
 	RelationInitLockInfo(rel);	/* see lmgr.c */
 
@@ -2561,6 +2582,111 @@ RelationBuildLocalRelation(const char *relname,
 
 	return rel;
 }
+
+
+/*
+ * RelationSetNewRelfilenode
+ *
+ * Assign a new relfilenode (physical file name) to the relation.
+ *
+ * This allows a full rewrite of the relation to be done with transactional
+ * safety (since the filenode assignment can be rolled back).  Note however
+ * that there is no simple way to access the relation's old data for the
+ * remainder of the current transaction.  This limits the usefulness to cases
+ * such as TRUNCATE or rebuilding an index from scratch.
+ *
+ * Caller must already hold exclusive lock on the relation.
+ *
+ * The relation is marked with relfrozenxid = freezeXid (InvalidTransactionId
+ * must be passed for indexes).  This should be a lower bound on the XIDs
+ * that will be put into the new relation contents.
+ */
+void
+RelationSetNewRelfilenode(Relation relation, TransactionId freezeXid)
+{
+	Oid			newrelfilenode;
+	RelFileNode newrnode;
+	Relation	pg_class;
+	HeapTuple	tuple;
+	Form_pg_class classform;
+
+	/* Indexes must have Invalid frozenxid; other relations must not */
+	Assert((relation->rd_rel->relkind == RELKIND_INDEX &&
+			freezeXid == InvalidTransactionId) ||
+		   TransactionIdIsNormal(freezeXid));
+
+	/* Allocate a new relfilenode */
+	newrelfilenode = GetNewRelFileNode(relation->rd_rel->reltablespace, NULL);
+
+	/*
+	 * Get a writable copy of the pg_class tuple for the given relation.
+	 */
+	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
+
+	tuple = SearchSysCacheCopy1(RELOID,
+								ObjectIdGetDatum(RelationGetRelid(relation)));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "could not find tuple for relation %u",
+			 RelationGetRelid(relation));
+	classform = (Form_pg_class) GETSTRUCT(tuple);
+
+	/*
+	 * Create storage for the main fork of the new relfilenode.
+	 *
+	 * NOTE: any conflict in relfilenode value will be caught here, if
+	 * GetNewRelFileNode messes up for any reason.
+	 */
+	newrnode = relation->rd_node;
+	newrnode.relNode = newrelfilenode;
+	RelationCreateStorage(newrnode, relation->rd_istemp);
+	smgrclosenode(newrnode);
+
+	/*
+	 * Schedule unlinking of the old storage at transaction commit.
+	 */
+	RelationDropStorage(relation);
+
+	/*
+	 * Now update the pg_class row.  However, if we're dealing with a mapped
+	 * index, pg_class.relfilenode doesn't change; instead we have to send
+	 * the update to the relation mapper.
+	 */
+	if (RelationIsMapped(relation))
+		RelationMapUpdateMap(RelationGetRelid(relation),
+							 newrelfilenode,
+							 relation->rd_rel->relisshared,
+							 false);
+	else
+		classform->relfilenode = newrelfilenode;
+
+	/* These changes are safe even for a mapped relation */
+	classform->relpages = 0;		/* it's empty until further notice */
+	classform->reltuples = 0;
+	classform->relfrozenxid = freezeXid;
+
+	simple_heap_update(pg_class, &tuple->t_self, tuple);
+	CatalogUpdateIndexes(pg_class, tuple);
+
+	heap_freetuple(tuple);
+
+	heap_close(pg_class, RowExclusiveLock);
+
+	/*
+	 * Make the pg_class row change visible, as well as the relation map
+	 * change if any.  This will cause the relcache entry to get updated, too.
+	 */
+	CommandCounterIncrement();
+
+	/*
+	 * Mark the rel as having been given a new relfilenode in the current
+	 * (sub) transaction.  This is a hint that can be used to optimize
+	 * later operations on the rel in the same transaction.
+	 */
+	relation->rd_newRelfilenodeSubid = GetCurrentSubTransactionId();
+	/* ... and now we have eoxact cleanup work to do */
+	need_eoxact_work = true;
+}
+
 
 /*
  *		RelationCacheInitialize
@@ -2596,6 +2722,11 @@ RelationCacheInitialize(void)
 	ctl.hash = oid_hash;
 	RelationIdCache = hash_create("Relcache by OID", INITRELCACHESIZE,
 								  &ctl, HASH_ELEM | HASH_FUNCTION);
+
+	/*
+	 * relation mapper needs initialized too
+	 */
+	RelationMapInitialize();
 }
 
 /*
@@ -2612,6 +2743,11 @@ void
 RelationCacheInitializePhase2(void)
 {
 	MemoryContext oldcxt;
+
+	/*
+	 * relation mapper needs initialized too
+	 */
+	RelationMapInitializePhase2();
 
 	/*
 	 * In bootstrap mode, pg_database isn't there yet anyway, so do nothing.
@@ -2660,6 +2796,11 @@ RelationCacheInitializePhase3(void)
 	RelIdCacheEnt *idhentry;
 	MemoryContext oldcxt;
 	bool		needNewCacheFile = !criticalSharedRelcachesBuilt;
+
+	/*
+	 * relation mapper needs initialized too
+	 */
+	RelationMapInitializePhase3();
 
 	/*
 	 * switch to cache memory context
@@ -2801,9 +2942,8 @@ RelationCacheInitializePhase3(void)
 			HeapTuple	htup;
 			Form_pg_class relp;
 
-			htup = SearchSysCache(RELOID,
-								ObjectIdGetDatum(RelationGetRelid(relation)),
-								  0, 0, 0);
+			htup = SearchSysCache1(RELOID,
+								ObjectIdGetDatum(RelationGetRelid(relation)));
 			if (!HeapTupleIsValid(htup))
 				elog(FATAL, "cache lookup failed for relation %u",
 					 RelationGetRelid(relation));
@@ -3995,9 +4135,6 @@ load_relcache_init_file(bool shared)
 		 * Reset transient-state fields in the relcache entry
 		 */
 		rel->rd_smgr = NULL;
-		rel->rd_targblock = InvalidBlockNumber;
-		rel->rd_fsm_nblocks = InvalidBlockNumber;
-		rel->rd_vm_nblocks = InvalidBlockNumber;
 		if (rel->rd_isnailed)
 			rel->rd_refcnt = 1;
 		else

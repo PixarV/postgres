@@ -68,7 +68,14 @@ extern Relation RelationBuildLocalRelation(const char *relname,
 						   TupleDesc tupDesc,
 						   Oid relid,
 						   Oid reltablespace,
-						   bool shared_relation);
+						   bool shared_relation,
+						   bool mapped_relation);
+
+/*
+ * Routine to manage assignment of new relfilenode to a relation
+ */
+extern void RelationSetNewRelfilenode(Relation relation,
+									  TransactionId freezeXid);
 
 /*
  * Routines for flushing/rebuilding relcache entries in various scenarios
@@ -79,11 +86,11 @@ extern void RelationCacheInvalidateEntry(Oid relationId);
 
 extern void RelationCacheInvalidate(void);
 
+extern void RelationCloseSmgrByOid(Oid relationId);
+
 extern void AtEOXact_RelationCache(bool isCommit);
 extern void AtEOSubXact_RelationCache(bool isCommit, SubTransactionId mySubid,
 						  SubTransactionId parentSubid);
-
-extern void RelationCacheMarkNewRelfilenode(Relation rel);
 
 /*
  * Routines to help manage rebuilding of relcache init files

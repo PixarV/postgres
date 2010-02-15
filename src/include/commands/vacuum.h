@@ -142,11 +142,10 @@ extern void vacuum_set_xid_limits(int freeze_min_age, int freeze_table_age,
 					  TransactionId *freezeLimit,
 					  TransactionId *freezeTableLimit);
 extern void vac_update_datfrozenxid(void);
-extern bool vac_is_partial_index(Relation indrel);
 extern void vacuum_delay_point(void);
 
 /* in commands/vacuumlazy.c */
-extern bool lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
+extern void lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 				BufferAccessStrategy bstrategy, bool *scanned_all);
 
 /* in commands/analyze.c */

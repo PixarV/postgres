@@ -49,6 +49,7 @@
 #include "parser/parsetree.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
+#include "storage/smgr.h"
 #include "utils/acl.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -2168,6 +2169,7 @@ OpenIntoRel(QueryDesc *queryDesc)
 											  NIL,
 											  RELKIND_RELATION,
 											  false,
+											  false,
 											  true,
 											  0,
 											  into->onCommit,
@@ -2221,8 +2223,8 @@ OpenIntoRel(QueryDesc *queryDesc)
 		(XLogIsNeeded() ? 0 : HEAP_INSERT_SKIP_WAL);
 	myState->bistate = GetBulkInsertState();
 
-	/* Not using WAL requires rd_targblock be initially invalid */
-	Assert(intoRelationDesc->rd_targblock == InvalidBlockNumber);
+	/* Not using WAL requires smgr_targblock be initially invalid */
+	Assert(RelationGetTargetBlock(intoRelationDesc) == InvalidBlockNumber);
 }
 
 /*
@@ -2240,7 +2242,13 @@ CloseIntoRel(QueryDesc *queryDesc)
 
 		/* If we skipped using WAL, must heap_sync before commit */
 		if (myState->hi_options & HEAP_INSERT_SKIP_WAL)
+		{
+			char reason[NAMEDATALEN + 30];
+			snprintf(reason, sizeof(reason), "SELECT INTO on \"%s\"",
+					 RelationGetRelationName(myState->rel));
+			XLogReportUnloggedStatement(reason);
 			heap_sync(myState->rel);
+		}
 
 		/* close rel, but keep lock until commit */
 		heap_close(myState->rel, NoLock);

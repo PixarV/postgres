@@ -45,6 +45,7 @@
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "storage/procsignal.h"
 #include "storage/spin.h"
 
 
@@ -556,6 +557,15 @@ HaveNFreeProcs(int n)
 	return (n <= 0);
 }
 
+bool
+IsWaitingForLock(void)
+{
+	if (lockAwaited == NULL)
+		return false;
+
+	return true;
+}
+
 /*
  * Cancel any pending wait for lock, when aborting a transaction.
  *
@@ -617,8 +627,7 @@ LockWaitCancel(void)
  *			at main transaction commit or abort
  *
  * At main transaction commit, we release all locks except session locks.
- * At main transaction abort, we release all locks including session locks;
- * this lets us clean up after a VACUUM FULL failure.
+ * At main transaction abort, we release all locks including session locks.
  *
  * At subtransaction commit, we don't release any locks (so this func is not
  * needed at all); we will defer the releasing to the parent transaction.
@@ -1671,7 +1680,7 @@ CheckStandbyTimeout(void)
 	now = GetCurrentTimestamp();
 
 	if (now >= statement_fin_time)
-		SendRecoveryConflictWithBufferPin();
+		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
 	else
 	{
 		/* Not time yet, so (re)schedule the interrupt */

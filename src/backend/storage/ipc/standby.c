@@ -127,6 +127,9 @@ WaitExceedsMaxStandbyDelay(void)
 	long	delay_secs;
 	int		delay_usecs;
 
+	if (MaxStandbyDelay == -1)
+		return false;
+
 	/* Are we past max_standby_delay? */
 	TimestampDifference(GetLatestXLogTime(), GetCurrentTimestamp(),
 						&delay_secs, &delay_usecs);
@@ -161,6 +164,7 @@ ResolveRecoveryConflictWithVirtualXIDs(VirtualTransactionId *waitlist,
 									   ProcSignalReason reason)
 {
 	char		waitactivitymsg[100];
+	char		oldactivitymsg[101];
 
 	while (VirtualTransactionIdIsValid(*waitlist))
 	{
@@ -183,17 +187,21 @@ ResolveRecoveryConflictWithVirtualXIDs(VirtualTransactionId *waitlist,
 			TimestampDifference(waitStart, now, &wait_s, &wait_us);
 			if (!logged && (wait_s > 0 || wait_us > 500000))
 			{
-				const char *oldactivitymsg;
+				const char *oldactivitymsgp;
 				int			len;
 
-				oldactivitymsg = get_ps_display(&len);
+				oldactivitymsgp = get_ps_display(&len);
+
+				if (len > 100)
+					len = 100;
+
+				memcpy(oldactivitymsg, oldactivitymsgp, len);
+				oldactivitymsg[len] = 0;
+
 				snprintf(waitactivitymsg, sizeof(waitactivitymsg),
 						 "waiting for max_standby_delay (%u s)",
 						 MaxStandbyDelay);
 				set_ps_display(waitactivitymsg, false);
-				if (len > 100)
-					len = 100;
-				memcpy(waitactivitymsg, oldactivitymsg, len);
 
 				pgstat_report_waiting(true);
 
@@ -223,7 +231,7 @@ ResolveRecoveryConflictWithVirtualXIDs(VirtualTransactionId *waitlist,
 		/* Reset ps display */
 		if (logged)
 		{
-			set_ps_display(waitactivitymsg, false);
+			set_ps_display(oldactivitymsg, false);
 			pgstat_report_waiting(false);
 		}
 
@@ -290,7 +298,7 @@ ResolveRecoveryConflictWithDatabase(Oid dbid)
 	 */
 	while (CountDBBackends(dbid) > 0)
 	{
-		CancelDBBackends(dbid, PROCSIG_RECOVERY_CONFLICT_TABLESPACE, true);
+		CancelDBBackends(dbid, PROCSIG_RECOVERY_CONFLICT_DATABASE, true);
 
 		/*
 		 * Wait awhile for them to die so that we avoid flooding an
@@ -351,15 +359,15 @@ ResolveRecoveryConflictWithLock(Oid dbOid, Oid relOid)
  * they hold one of the buffer pins that is blocking Startup process. If so,
  * backends will take an appropriate error action, ERROR or FATAL.
  *
- * A secondary purpose of this is to avoid deadlocks that might occur between
- * the Startup process and lock waiters. Deadlocks occur because if queries
+ * We also check for deadlocks before we wait, though applications that cause
+ * these will be extremely rare.  Deadlocks occur because if queries
  * wait on a lock, that must be behind an AccessExclusiveLock, which can only
- * be clared if the Startup process replays a transaction completion record.
- * If Startup process is waiting then that is a deadlock. If we allowed a
- * setting of max_standby_delay that meant "wait forever" we would then need
- * special code to protect against deadlock. Such deadlocks are rare, so the
- * code would be almost certainly buggy, so we avoid both long waits and
- * deadlocks using the same mechanism.
+ * be cleared if the Startup process replays a transaction completion record.
+ * If Startup process is also waiting then that is a deadlock. The deadlock
+ * can occur if the query is waiting and then the Startup sleeps, or if
+ * Startup is sleeping and the the query waits on a lock. We protect against
+ * only the former sequence here, the latter sequence is checked prior to
+ * the query sleeping, in CheckRecoveryConflictDeadlock().
  */
 void
 ResolveRecoveryConflictWithBufferPin(void)
@@ -368,11 +376,23 @@ ResolveRecoveryConflictWithBufferPin(void)
 
 	Assert(InHotStandby);
 
-	/*
-	 * Signal immediately or set alarm for later.
-	 */
 	if (MaxStandbyDelay == 0)
-		SendRecoveryConflictWithBufferPin();
+	{
+		/*
+		 * We don't want to wait, so just tell everybody holding the pin to 
+		 * get out of town.
+		 */
+		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+	}
+	else if (MaxStandbyDelay == -1)
+	{
+		/*
+		 * Send out a request to check for buffer pin deadlocks before we wait.
+		 * This is fairly cheap, so no need to wait for deadlock timeout before
+		 * trying to send it out.
+		 */
+		SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK);
+	}
 	else
 	{
 		TimestampTz now;
@@ -386,12 +406,24 @@ ResolveRecoveryConflictWithBufferPin(void)
 							&standby_delay_secs, &standby_delay_usecs);
 
 		if (standby_delay_secs >= MaxStandbyDelay)
-			SendRecoveryConflictWithBufferPin();
+		{
+			/*
+			 * We're already behind, so clear a path as quickly as possible.
+			 */
+			SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_BUFFERPIN);
+		}
 		else
 		{
 			TimestampTz fin_time;			/* Expected wake-up time by timer */
 			long	timer_delay_secs;		/* Amount of time we set timer for */
 			int		timer_delay_usecs = 0;
+
+			/*
+			 * Send out a request to check for buffer pin deadlocks before we wait.
+			 * This is fairly cheap, so no need to wait for deadlock timeout before
+			 * trying to send it out.
+			 */
+			SendRecoveryConflictWithBufferPin(PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK);
 
 			/*
 			 * How much longer we should wait?
@@ -435,15 +467,18 @@ ResolveRecoveryConflictWithBufferPin(void)
 }
 
 void
-SendRecoveryConflictWithBufferPin(void)
+SendRecoveryConflictWithBufferPin(ProcSignalReason reason)
 {
+	Assert(reason == PROCSIG_RECOVERY_CONFLICT_BUFFERPIN ||
+		   reason == PROCSIG_RECOVERY_CONFLICT_STARTUP_DEADLOCK);
+
 	/*
 	 * We send signal to all backends to ask them if they are holding
 	 * the buffer pin which is delaying the Startup process. We must
 	 * not set the conflict flag yet, since most backends will be innocent.
 	 * Let the SIGUSR1 handling in each backend decide their own fate.
 	 */
-	CancelDBBackends(InvalidOid, PROCSIG_RECOVERY_CONFLICT_BUFFERPIN, false);
+	CancelDBBackends(InvalidOid, reason, false);
 }
 
 /*
@@ -516,7 +551,7 @@ StandbyAcquireAccessExclusiveLock(TransactionId xid, Oid dbOid, Oid relOid)
 		return;
 
 	elog(trace_recovery(DEBUG4),
-		 "adding recovery lock: db %d rel %d", dbOid, relOid);
+		 "adding recovery lock: db %u rel %u", dbOid, relOid);
 
 	/* dbOid is InvalidOid when we are locking a shared relation. */
 	Assert(OidIsValid(relOid));
@@ -558,15 +593,13 @@ StandbyReleaseLocks(TransactionId xid)
 			LOCKTAG		locktag;
 
 			elog(trace_recovery(DEBUG4),
-					"releasing recovery lock: xid %u db %d rel %d",
-							lock->xid, lock->dbOid, lock->relOid);
+				 "releasing recovery lock: xid %u db %u rel %u",
+				 lock->xid, lock->dbOid, lock->relOid);
 			SET_LOCKTAG_RELATION(locktag, lock->dbOid, lock->relOid);
 			if (!LockRelease(&locktag, AccessExclusiveLock, true))
 				elog(trace_recovery(LOG),
-					"RecoveryLockList contains entry for lock "
-					"no longer recorded by lock manager "
-					"xid %u database %d relation %d",
-						lock->xid, lock->dbOid, lock->relOid);
+					 "RecoveryLockList contains entry for lock no longer recorded by lock manager: xid %u database %u relation %u",
+					 lock->xid, lock->dbOid, lock->relOid);
 
 			RecoveryLockList = list_delete_cell(RecoveryLockList, cell, prev);
 			pfree(lock);
@@ -621,14 +654,12 @@ StandbyReleaseLocksMany(TransactionId removeXid, bool keepPreparedXacts)
 			if (keepPreparedXacts && StandbyTransactionIdIsPrepared(lock->xid))
 				continue;
 			elog(trace_recovery(DEBUG4),
-				 "releasing recovery lock: xid %u db %d rel %d",
+				 "releasing recovery lock: xid %u db %u rel %u",
 				 lock->xid, lock->dbOid, lock->relOid);
 			SET_LOCKTAG_RELATION(locktag, lock->dbOid, lock->relOid);
 			if (!LockRelease(&locktag, AccessExclusiveLock, true))
 				elog(trace_recovery(LOG),
-					 "RecoveryLockList contains entry for lock "
-					 "no longer recorded by lock manager "
-					 "xid %u database %d relation %d",
+					 "RecoveryLockList contains entry for lock no longer recorded by lock manager: xid %u database %u relation %u",
 					 lock->xid, lock->dbOid, lock->relOid);
 			RecoveryLockList = list_delete_cell(RecoveryLockList, cell, prev);
 			pfree(lock);
@@ -708,8 +739,7 @@ standby_desc_running_xacts(StringInfo buf, xl_running_xacts *xlrec)
 {
 	int			i;
 
-	appendStringInfo(buf,
-					 " nextXid %u oldestRunningXid %u",
+	appendStringInfo(buf, " nextXid %u oldestRunningXid %u",
 					 xlrec->nextXid,
 					 xlrec->oldestRunningXid);
 	if (xlrec->xcnt > 0)
@@ -736,7 +766,7 @@ standby_desc(StringInfo buf, uint8 xl_info, char *rec)
 		appendStringInfo(buf, "AccessExclusive locks:");
 
 		for (i = 0; i < xlrec->nlocks; i++)
-			appendStringInfo(buf, " xid %u db %d rel %d",
+			appendStringInfo(buf, " xid %u db %u rel %u",
 							 xlrec->locks[i].xid, xlrec->locks[i].dbOid,
 							 xlrec->locks[i].relOid);
 	}

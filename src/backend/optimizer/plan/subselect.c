@@ -832,9 +832,7 @@ hash_ok_operator(OpExpr *expr)
 	if (list_length(expr->args) != 2)
 		return false;
 	/* else must look up the operator properties */
-	tup = SearchSysCache(OPEROID,
-						 ObjectIdGetDatum(opid),
-						 0, 0, 0);
+	tup = SearchSysCache1(OPEROID, ObjectIdGetDatum(opid));
 	if (!HeapTupleIsValid(tup))
 		elog(ERROR, "cache lookup failed for operator %u", opid);
 	optup = (Form_pg_operator) GETSTRUCT(tup);
@@ -2098,9 +2096,15 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 										 locally_added_param);
 			break;
 
+		case T_WindowAgg:
+			finalize_primnode(((WindowAgg *) plan)->startOffset,
+							  &context);
+			finalize_primnode(((WindowAgg *) plan)->endOffset,
+							  &context);
+			break;
+
 		case T_Hash:
 		case T_Agg:
-		case T_WindowAgg:
 		case T_Material:
 		case T_Sort:
 		case T_Unique:

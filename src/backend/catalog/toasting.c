@@ -31,8 +31,10 @@
 #include "utils/builtins.h"
 #include "utils/syscache.h"
 
-Oid binary_upgrade_next_pg_type_toast_oid = InvalidOid;
+/* Kluges for upgrade-in-place support */
 extern Oid binary_upgrade_next_toast_relfilenode;
+
+Oid binary_upgrade_next_pg_type_toast_oid = InvalidOid;
 
 static bool create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid,
 				   Datum reloptions);
@@ -112,6 +114,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 	HeapTuple	reltup;
 	TupleDesc	tupdesc;
 	bool		shared_relation;
+	bool		mapped_relation;
 	Relation	class_rel;
 	Oid			toast_relid;
 	Oid			toast_idxid;
@@ -137,6 +140,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("shared tables cannot be toasted after initdb")));
 
+	/* It's mapped if and only if its parent is, too */
+	mapped_relation = RelationIsMapped(rel);
+
 	/*
 	 * Is it already toasted?
 	 */
@@ -145,7 +151,9 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 
 	/*
 	 * Check to see whether the table actually needs a TOAST table.
-	 * If the relfilenode is specified, force toast file creation.
+	 *
+	 * If an update-in-place toast relfilenode is specified, force toast file
+	 * creation even if it seems not to need one.
 	 */
 	if (!needs_toast_table(rel) &&
 		!OidIsValid(binary_upgrade_next_toast_relfilenode))
@@ -209,6 +217,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 										   NIL,
 										   RELKIND_TOASTVALUE,
 										   shared_relation,
+										   mapped_relation,
 										   true,
 										   0,
 										   ONCOMMIT_NOOP,
@@ -267,9 +276,7 @@ create_toast_table(Relation rel, Oid toastOid, Oid toastIndexOid, Datum reloptio
 	 */
 	class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
-	reltup = SearchSysCacheCopy(RELOID,
-								ObjectIdGetDatum(relOid),
-								0, 0, 0);
+	reltup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relOid));
 	if (!HeapTupleIsValid(reltup))
 		elog(ERROR, "cache lookup failed for relation %u", relOid);
 

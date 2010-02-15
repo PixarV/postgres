@@ -466,9 +466,25 @@ set_plan_refs(PlannerGlobal *glob, Plan *plan, int rtoffset)
 			}
 			break;
 		case T_Agg:
-		case T_WindowAgg:
 		case T_Group:
 			set_upper_references(glob, plan, rtoffset);
+			break;
+		case T_WindowAgg:
+			{
+				WindowAgg	   *wplan = (WindowAgg *) plan;
+
+				set_upper_references(glob, plan, rtoffset);
+
+				/*
+				 * Like Limit node limit/offset expressions, WindowAgg has
+				 * frame offset expressions, which cannot contain subplan
+				 * variable refs, so fix_scan_expr works for them.
+				 */
+				wplan->startOffset =
+					fix_scan_expr(glob, wplan->startOffset, rtoffset);
+				wplan->endOffset =
+					fix_scan_expr(glob, wplan->endOffset, rtoffset);
+			}
 			break;
 		case T_Result:
 			{
@@ -1882,9 +1898,7 @@ record_plan_function_dependency(PlannerGlobal *glob, Oid funcid)
 		HeapTuple	func_tuple;
 		PlanInvalItem *inval_item;
 
-		func_tuple = SearchSysCache(PROCOID,
-									ObjectIdGetDatum(funcid),
-									0, 0, 0);
+		func_tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 		if (!HeapTupleIsValid(func_tuple))
 			elog(ERROR, "cache lookup failed for function %u", funcid);
 

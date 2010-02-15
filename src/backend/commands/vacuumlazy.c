@@ -50,7 +50,6 @@
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
 #include "storage/lmgr.h"
-#include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/pg_rusage.h"
@@ -141,11 +140,8 @@ static int	vac_cmp_itemptr(const void *left, const void *right);
  *
  *		At entry, we have already established a transaction and opened
  *		and locked the relation.
- *
- *		The return value indicates whether this function has held off
- *		interrupts -- caller must RESUME_INTERRUPTS() after commit if true.
  */
-bool
+void
 lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 				BufferAccessStrategy bstrategy, bool *scanned_all)
 {
@@ -157,7 +153,6 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 	TimestampTz starttime = 0;
 	bool		scan_all;
 	TransactionId freezeTableLimit;
-	bool		heldoff = false;
 
 	pg_rusage_init(&ru0);
 
@@ -199,22 +194,12 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 	 *
 	 * Don't even think about it unless we have a shot at releasing a goodly
 	 * number of pages.  Otherwise, the time taken isn't worth it.
-	 *
-	 * Note that after we've truncated the heap, it's too late to abort the
-	 * transaction; doing so would lose the sinval messages needed to tell
-	 * the other backends about the table being shrunk.  We prevent interrupts
-	 * in that case; caller is responsible for re-enabling them after
-	 * committing the transaction.
 	 */
 	possibly_freeable = vacrelstats->rel_pages - vacrelstats->nonempty_pages;
 	if (possibly_freeable > 0 &&
 		(possibly_freeable >= REL_TRUNCATE_MINIMUM ||
 		 possibly_freeable >= vacrelstats->rel_pages / REL_TRUNCATE_FRACTION))
-	{
-		HOLD_INTERRUPTS();
-		heldoff = true;
 		lazy_truncate_heap(onerel, vacrelstats);
-	}
 
 	/* Vacuum the Free Space Map */
 	FreeSpaceMapVacuum(onerel);
@@ -261,8 +246,6 @@ lazy_vacuum_rel(Relation onerel, VacuumStmt *vacstmt,
 
 	if (scanned_all)
 		*scanned_all = vacrelstats->scanned_all;
-
-	return heldoff;
 }
 
 /*
@@ -501,8 +484,7 @@ lazy_scan_heap(Relation onerel, LVRelStats *vacrelstats,
 		 *
 		 * We count tuples removed by the pruning step as removed by VACUUM.
 		 */
-		tups_vacuumed += heap_page_prune(onerel, buf, OldestXmin,
-										 false, false);
+		tups_vacuumed += heap_page_prune(onerel, buf, OldestXmin, false);
 
 		/*
 		 * Now scan the page to collect vacuumable items and check for tuples
@@ -907,7 +889,7 @@ lazy_vacuum_page(Relation onerel, BlockNumber blkno, Buffer buffer,
 		recptr = log_heap_clean(onerel, buffer,
 								NULL, 0, NULL, 0,
 								unused, uncnt,
-								vacrelstats->latestRemovedXid, false);
+								vacrelstats->latestRemovedXid);
 		PageSetLSN(page, recptr);
 		PageSetTLI(page, ThisTimeLineID);
 	}
@@ -934,7 +916,6 @@ lazy_vacuum_index(Relation indrel,
 	pg_rusage_init(&ru0);
 
 	ivinfo.index = indrel;
-	ivinfo.vacuum_full = false;
 	ivinfo.analyze_only = false;
 	ivinfo.estimated_count = true;
 	ivinfo.message_level = elevel;
@@ -966,7 +947,6 @@ lazy_cleanup_index(Relation indrel,
 	pg_rusage_init(&ru0);
 
 	ivinfo.index = indrel;
-	ivinfo.vacuum_full = false;
 	ivinfo.analyze_only = false;
 	ivinfo.estimated_count = !vacrelstats->scanned_all;
 	ivinfo.message_level = elevel;
@@ -1058,15 +1038,14 @@ lazy_truncate_heap(Relation onerel, LVRelStats *vacrelstats)
 	 */
 	RelationTruncate(onerel, new_rel_pages);
 
-	/* force relcache inval so all backends reset their rd_targblock */
-	CacheInvalidateRelcache(onerel);
-
 	/*
-	 * Note: once we have truncated, we *must* keep the exclusive lock until
-	 * commit.	The sinval message won't be sent until commit, and other
-	 * backends must see it and reset their rd_targblock values before they
-	 * can safely access the table again.
+	 * We can release the exclusive lock as soon as we have truncated.  Other
+	 * backends can't safely access the relation until they have processed the
+	 * smgr invalidation that smgrtruncate sent out ... but that should happen
+	 * as part of standard invalidation processing once they acquire lock on
+	 * the relation.
 	 */
+	UnlockRelation(onerel, AccessExclusiveLock);
 
 	/* update statistics */
 	vacrelstats->rel_pages = new_rel_pages;

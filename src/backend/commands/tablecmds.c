@@ -436,6 +436,12 @@ DefineRelation(CreateStmt *stmt, char relkind)
 						   get_tablespace_name(tablespaceId));
 	}
 
+	/* In all cases disallow placing user relations in pg_global */
+	if (tablespaceId == GLOBALTABLESPACE_OID)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("only shared relations can be placed in pg_global tablespace")));
+
 	/*
 	 * Parse and validate reloptions, if any.
 	 */
@@ -533,6 +539,7 @@ DefineRelation(CreateStmt *stmt, char relkind)
 										  list_concat(cookedDefaults,
 													  old_constraints),
 										  relkind,
+										  false,
 										  false,
 										  localHasOids,
 										  parentOidCount,
@@ -721,9 +728,7 @@ RemoveRelations(DropStmt *drop)
 		 */
 		if (relkind == RELKIND_INDEX)
 		{
-			tuple = SearchSysCache(INDEXRELID,
-								   ObjectIdGetDatum(relOid),
-								   0, 0, 0);
+			tuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(relOid));
 			if (HeapTupleIsValid(tuple))
 			{
 				Form_pg_index index = (Form_pg_index) GETSTRUCT(tuple);
@@ -736,9 +741,7 @@ RemoveRelations(DropStmt *drop)
 		/* Get the lock before trying to fetch the syscache entry */
 		LockRelationOid(relOid, AccessExclusiveLock);
 
-		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(relOid),
-							   0, 0, 0);
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relOid));
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for relation %u", relOid);
 		classform = (Form_pg_class) GETSTRUCT(tuple);
@@ -996,7 +999,7 @@ ExecuteTruncate(TruncateStmt *stmt)
 			 * as the relfilenode value. The old storage file is scheduled for
 			 * deletion at commit.
 			 */
-			setNewRelfilenode(rel, RecentXmin);
+			RelationSetNewRelfilenode(rel, RecentXmin);
 
 			heap_relid = RelationGetRelid(rel);
 			toast_relid = rel->rd_rel->reltoastrelid;
@@ -1007,14 +1010,14 @@ ExecuteTruncate(TruncateStmt *stmt)
 			if (OidIsValid(toast_relid))
 			{
 				rel = relation_open(toast_relid, AccessExclusiveLock);
-				setNewRelfilenode(rel, RecentXmin);
+				RelationSetNewRelfilenode(rel, RecentXmin);
 				heap_close(rel, NoLock);
 			}
 
 			/*
 			 * Reconstruct the indexes to match, and we're done.
 			 */
-			reindex_relation(heap_relid, true);
+			reindex_relation(heap_relid, true, false);
 		}
 	}
 
@@ -1089,16 +1092,6 @@ truncate_check_rel(Relation rel)
 		ereport(ERROR,
 				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 				 errmsg("permission denied: \"%s\" is a system catalog",
-						RelationGetRelationName(rel))));
-
-	/*
-	 * We can never allow truncation of shared or nailed-in-cache relations,
-	 * because we can't support changing their relfilenode values.
-	 */
-	if (rel->rd_rel->relisshared || rel->rd_isnailed)
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot truncate system relation \"%s\"",
 						RelationGetRelationName(rel))));
 
 	/*
@@ -1909,9 +1902,7 @@ setRelhassubclassInRelation(Oid relationId, bool relhassubclass)
 	 * need to update it, but we still need to issue an SI inval message.
 	 */
 	relationRelation = heap_open(RelationRelationId, RowExclusiveLock);
-	tuple = SearchSysCacheCopy(RELOID,
-							   ObjectIdGetDatum(relationId),
-							   0, 0, 0);
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relationId));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", relationId);
 	classtuple = (Form_pg_class) GETSTRUCT(tuple);
@@ -2065,10 +2056,9 @@ renameatt(Oid myrelid,
 	/* new name should not already exist */
 
 	/* this test is deliberately not attisdropped-aware */
-	if (SearchSysCacheExists(ATTNAME,
-							 ObjectIdGetDatum(myrelid),
-							 PointerGetDatum(newattname),
-							 0, 0))
+	if (SearchSysCacheExists2(ATTNAME,
+							  ObjectIdGetDatum(myrelid),
+							  PointerGetDatum(newattname)))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
@@ -2175,9 +2165,7 @@ RenameRelationInternal(Oid myrelid, const char *newrelname, Oid namespaceId)
 	 */
 	relrelation = heap_open(RelationRelationId, RowExclusiveLock);
 
-	reltup = SearchSysCacheCopy(RELOID,
-								ObjectIdGetDatum(myrelid),
-								0, 0, 0);
+	reltup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(myrelid));
 	if (!HeapTupleIsValid(reltup))		/* shouldn't happen */
 		elog(ERROR, "cache lookup failed for relation %u", myrelid);
 	relform = (Form_pg_class) GETSTRUCT(reltup);
@@ -2866,20 +2854,18 @@ ATRewriteTables(List **wqueue)
 		if (tab->newvals != NIL || tab->new_changeoids)
 		{
 			/* Build a temporary relation and copy data */
-			Oid			OIDNewHeap;
-			char		NewHeapName[NAMEDATALEN];
-			Oid			NewTableSpace;
 			Relation	OldHeap;
-			ObjectAddress object;
+			Oid			OIDNewHeap;
+			Oid			NewTableSpace;
 
 			OldHeap = heap_open(tab->relid, NoLock);
 
 			/*
-			 * We can never allow rewriting of shared or nailed-in-cache
-			 * relations, because we can't support changing their relfilenode
-			 * values.
+			 * We don't support rewriting of system catalogs; there are
+			 * too many corner cases and too little benefit.  In particular
+			 * this is certainly not going to work for mapped catalogs.
 			 */
-			if (OldHeap->rd_rel->relisshared || OldHeap->rd_isnailed)
+			if (IsSystemRelation(OldHeap))
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 						 errmsg("cannot rewrite system relation \"%s\"",
@@ -2905,18 +2891,8 @@ ATRewriteTables(List **wqueue)
 
 			heap_close(OldHeap, NoLock);
 
-			/*
-			 * Create the new heap, using a temporary name in the same
-			 * namespace as the existing table.  NOTE: there is some risk of
-			 * collision with user relnames.  Working around this seems more
-			 * trouble than it's worth; in particular, we can't create the new
-			 * heap in a different namespace from the old, or we will have
-			 * problems with the TEMP status of temp tables.
-			 */
-			snprintf(NewHeapName, sizeof(NewHeapName),
-					 "pg_temp_%u", tab->relid);
-
-			OIDNewHeap = make_new_heap(tab->relid, NewHeapName, NewTableSpace);
+			/* Create transient table that will receive the modified data */
+			OIDNewHeap = make_new_heap(tab->relid, NewTableSpace);
 
 			/*
 			 * Copy the heap data into the new table with the desired
@@ -2926,33 +2902,14 @@ ATRewriteTables(List **wqueue)
 			ATRewriteTable(tab, OIDNewHeap);
 
 			/*
-			 * Swap the physical files of the old and new heaps.  Since we are
-			 * generating a new heap, we can use RecentXmin for the table's
-			 * new relfrozenxid because we rewrote all the tuples on
-			 * ATRewriteTable, so no older Xid remains on the table.
+			 * Swap the physical files of the old and new heaps, then rebuild
+			 * indexes and discard the new heap.  We can use RecentXmin for
+			 * the table's new relfrozenxid because we rewrote all the tuples
+			 * in ATRewriteTable, so no older Xid remains in the table.  Also,
+			 * we never try to swap toast tables by content, since we have no
+			 * interest in letting this code work on system catalogs.
 			 */
-			swap_relation_files(tab->relid, OIDNewHeap, RecentXmin);
-
-			CommandCounterIncrement();
-
-			/* Destroy new heap with old filenode */
-			object.classId = RelationRelationId;
-			object.objectId = OIDNewHeap;
-			object.objectSubId = 0;
-
-			/*
-			 * The new relation is local to our transaction and we know
-			 * nothing depends on it, so DROP_RESTRICT should be OK.
-			 */
-			performDeletion(&object, DROP_RESTRICT);
-			/* performDeletion does CommandCounterIncrement at end */
-
-			/*
-			 * Rebuild each index on the relation (but not the toast table,
-			 * which is all-new anyway).  We do not need
-			 * CommandCounterIncrement() because reindex_relation does it.
-			 */
-			reindex_relation(tab->relid, false);
+			finish_heap_swap(tab->relid, OIDNewHeap, false, false, RecentXmin);
 		}
 		else
 		{
@@ -3297,7 +3254,13 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap)
 
 		/* If we skipped writing WAL, then we need to sync the heap. */
 		if (hi_options & HEAP_INSERT_SKIP_WAL)
+		{
+			char reason[NAMEDATALEN + 30];
+			snprintf(reason, sizeof(reason), "table rewrite on \"%s\"",
+					 RelationGetRelationName(newrel));
+			XLogReportUnloggedStatement(reason);
 			heap_sync(newrel);
+		}
 
 		heap_close(newrel, NoLock);
 	}
@@ -3699,9 +3662,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 
 	pgclass = heap_open(RelationRelationId, RowExclusiveLock);
 
-	reltup = SearchSysCacheCopy(RELOID,
-								ObjectIdGetDatum(myrelid),
-								0, 0, 0);
+	reltup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(myrelid));
 	if (!HeapTupleIsValid(reltup))
 		elog(ERROR, "cache lookup failed for relation %u", myrelid);
 	relkind = ((Form_pg_class) GETSTRUCT(reltup))->relkind;
@@ -3710,10 +3671,9 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	 * this test is deliberately not attisdropped-aware, since if one tries to
 	 * add a column matching a dropped column name, it's gonna fail anyway.
 	 */
-	if (SearchSysCacheExists(ATTNAME,
-							 ObjectIdGetDatum(myrelid),
-							 PointerGetDatum(colDef->colname),
-							 0, 0))
+	if (SearchSysCacheExists2(ATTNAME,
+							  ObjectIdGetDatum(myrelid),
+							  PointerGetDatum(colDef->colname)))
 		ereport(ERROR,
 				(errcode(ERRCODE_DUPLICATE_COLUMN),
 				 errmsg("column \"%s\" of relation \"%s\" already exists",
@@ -3737,7 +3697,7 @@ ATExecAddColumn(AlteredTableInfo *tab, Relation rel,
 	typeOid = HeapTupleGetOid(typeTuple);
 
 	/* make sure datatype is legal for a column */
-	CheckAttributeType(colDef->colname, typeOid);
+	CheckAttributeType(colDef->colname, typeOid, false);
 
 	/* construct new attribute's pg_attribute entry */
 	attribute.attrelid = myrelid;
@@ -3981,9 +3941,7 @@ ATExecDropNotNull(Relation rel, const char *colName)
 		Form_pg_index indexStruct;
 		int			i;
 
-		indexTuple = SearchSysCache(INDEXRELID,
-									ObjectIdGetDatum(indexoid),
-									0, 0, 0);
+		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
 		indexStruct = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -4524,9 +4482,8 @@ ATExecDropColumn(List **wqueue, Relation rel, const char *colName,
 
 		class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
-		tuple = SearchSysCacheCopy(RELOID,
-								   ObjectIdGetDatum(RelationGetRelid(rel)),
-								   0, 0, 0);
+		tuple = SearchSysCacheCopy1(RELOID,
+									ObjectIdGetDatum(RelationGetRelid(rel)));
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for relation %u",
 				 RelationGetRelid(rel));
@@ -4904,9 +4861,7 @@ ATAddForeignKeyConstraint(AlteredTableInfo *tab, Relation rel,
 		int16		eqstrategy;
 
 		/* We need several fields out of the pg_opclass entry */
-		cla_ht = SearchSysCache(CLAOID,
-								ObjectIdGetDatum(opclasses[i]),
-								0, 0, 0);
+		cla_ht = SearchSysCache1(CLAOID, ObjectIdGetDatum(opclasses[i]));
 		if (!HeapTupleIsValid(cla_ht))
 			elog(ERROR, "cache lookup failed for opclass %u", opclasses[i]);
 		cla_tup = (Form_pg_opclass) GETSTRUCT(cla_ht);
@@ -5131,9 +5086,7 @@ transformFkeyGetPrimaryKey(Relation pkrel, Oid *indexOid,
 	{
 		Oid			indexoid = lfirst_oid(indexoidscan);
 
-		indexTuple = SearchSysCache(INDEXRELID,
-									ObjectIdGetDatum(indexoid),
-									0, 0, 0);
+		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
 		indexStruct = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -5228,9 +5181,7 @@ transformFkeyCheckAttrs(Relation pkrel,
 					j;
 
 		indexoid = lfirst_oid(indexoidscan);
-		indexTuple = SearchSysCache(INDEXRELID,
-									ObjectIdGetDatum(indexoid),
-									0, 0, 0);
+		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
 		indexStruct = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -5847,7 +5798,7 @@ ATPrepAlterColumnType(List **wqueue,
 	targettype = typenameTypeId(NULL, typeName, &targettypmod);
 
 	/* make sure datatype is legal for a column */
-	CheckAttributeType(colName, targettype);
+	CheckAttributeType(colName, targettype, false);
 
 	/*
 	 * Set up an expression to transform the old data value to the new type.
@@ -6460,9 +6411,7 @@ ATExecChangeOwner(Oid relationOid, Oid newOwnerId, bool recursing)
 	/* Get its pg_class tuple, too */
 	class_rel = heap_open(RelationRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relationOid),
-						   0, 0, 0);
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relationOid));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", relationOid);
 	tuple_class = (Form_pg_class) GETSTRUCT(tuple);
@@ -6816,9 +6765,7 @@ ATExecSetRelOptions(Relation rel, List *defList, bool isReset)
 
 	/* Get the old reloptions */
 	relid = RelationGetRelid(rel);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(relid),
-						   0, 0, 0);
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", relid);
 
@@ -6881,9 +6828,7 @@ ATExecSetRelOptions(Relation rel, List *defList, bool isReset)
 		toastrel = heap_open(toastid, AccessExclusiveLock);
 
 		/* Get the old reloptions */
-		tuple = SearchSysCache(RELOID,
-							   ObjectIdGetDatum(toastid),
-							   0, 0, 0);
+		tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(toastid));
 		if (!HeapTupleIsValid(tuple))
 			elog(ERROR, "cache lookup failed for relation %u", toastid);
 
@@ -6947,10 +6892,21 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace)
 	rel = relation_open(tableOid, AccessExclusiveLock);
 
 	/*
-	 * We can never allow moving of shared or nailed-in-cache relations,
-	 * because we can't support changing their reltablespace values.
+	 * No work if no change in tablespace.
 	 */
-	if (rel->rd_rel->relisshared || rel->rd_isnailed)
+	oldTableSpace = rel->rd_rel->reltablespace;
+	if (newTableSpace == oldTableSpace ||
+		(newTableSpace == MyDatabaseTableSpace && oldTableSpace == 0))
+	{
+		relation_close(rel, NoLock);
+		return;
+	}
+
+	/*
+	 * We cannot support moving mapped relations into different tablespaces.
+	 * (In particular this eliminates all shared catalogs.)
+	 */
+	if (RelationIsMapped(rel))
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot move system relation \"%s\"",
@@ -6971,26 +6927,13 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace)
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot move temporary tables of other sessions")));
 
-	/*
-	 * No work if no change in tablespace.
-	 */
-	oldTableSpace = rel->rd_rel->reltablespace;
-	if (newTableSpace == oldTableSpace ||
-		(newTableSpace == MyDatabaseTableSpace && oldTableSpace == 0))
-	{
-		relation_close(rel, NoLock);
-		return;
-	}
-
 	reltoastrelid = rel->rd_rel->reltoastrelid;
 	reltoastidxid = rel->rd_rel->reltoastidxid;
 
 	/* Get a modifiable copy of the relation's pg_class row */
 	pg_class = heap_open(RelationRelationId, RowExclusiveLock);
 
-	tuple = SearchSysCacheCopy(RELOID,
-							   ObjectIdGetDatum(tableOid),
-							   0, 0, 0);
+	tuple = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(tableOid));
 	if (!HeapTupleIsValid(tuple))
 		elog(ERROR, "cache lookup failed for relation %u", tableOid);
 	rd_rel = (Form_pg_class) GETSTRUCT(tuple);
@@ -7007,9 +6950,7 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace)
 	 * Relfilenodes are not unique across tablespaces, so we need to allocate
 	 * a new one in the new tablespace.
 	 */
-	newrelfilenode = GetNewRelFileNode(newTableSpace,
-									   rel->rd_rel->relisshared,
-									   NULL);
+	newrelfilenode = GetNewRelFileNode(newTableSpace, NULL);
 
 	/* Open old and new relation */
 	newrnode = rel->rd_node;
@@ -7896,9 +7837,7 @@ AlterRelationNamespaceInternal(Relation classRel, Oid relOid,
 	HeapTuple	classTup;
 	Form_pg_class classForm;
 
-	classTup = SearchSysCacheCopy(RELOID,
-								  ObjectIdGetDatum(relOid),
-								  0, 0, 0);
+	classTup = SearchSysCacheCopy1(RELOID, ObjectIdGetDatum(relOid));
 	if (!HeapTupleIsValid(classTup))
 		elog(ERROR, "cache lookup failed for relation %u", relOid);
 	classForm = (Form_pg_class) GETSTRUCT(classTup);

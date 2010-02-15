@@ -447,6 +447,48 @@ _bt_checkpage(Relation rel, Buffer buf)
 }
 
 /*
+ * Log the reuse of a page from the FSM.
+ */
+static void
+_bt_log_reuse_page(Relation rel, BlockNumber blkno, TransactionId latestRemovedXid)
+{
+	if (rel->rd_istemp)
+		return;
+
+	/* No ereport(ERROR) until changes are logged */
+	START_CRIT_SECTION();
+
+	/*
+	 * We don't do MarkBufferDirty here because we're about initialise
+	 * the page, and nobody else can see it yet.
+	 */
+
+	/* XLOG stuff */
+	{
+		XLogRecPtr	recptr;
+		XLogRecData rdata[1];
+		xl_btree_reuse_page xlrec_reuse;
+
+		xlrec_reuse.node = rel->rd_node;
+		xlrec_reuse.block = blkno;
+		xlrec_reuse.latestRemovedXid = latestRemovedXid;
+		rdata[0].data = (char *) &xlrec_reuse;
+		rdata[0].len = SizeOfBtreeReusePage;
+		rdata[0].buffer = InvalidBuffer;
+		rdata[0].next = NULL;
+
+		recptr = XLogInsert(RM_BTREE_ID, XLOG_BTREE_REUSE_PAGE, rdata);
+
+		/*
+		 * We don't do PageSetLSN or PageSetTLI here because
+		 * we're about initialise the page, so no need.
+		 */
+	}
+
+	END_CRIT_SECTION();
+}
+
+/*
  *	_bt_getbuf() -- Get a buffer by block number for read or write.
  *
  *		blkno == P_NEW means to get an unallocated index page.	The page
@@ -510,7 +552,19 @@ _bt_getbuf(Relation rel, BlockNumber blkno, int access)
 			{
 				page = BufferGetPage(buf);
 				if (_bt_page_recyclable(page))
-				{
+				{					
+					/*
+					 * If we are generating WAL for Hot Standby then create
+					 * a WAL record that will allow us to conflict with
+					 * queries running on standby.
+					 */
+					if (XLogStandbyInfoActive())
+					{
+						BTPageOpaque opaque = (BTPageOpaque) PageGetSpecialPointer(page);
+
+						_bt_log_reuse_page(rel, blkno, opaque->btpo.xact);
+					}
+
 					/* Okay to use page.  Re-initialize and return it */
 					_bt_pageinit(page, BufferGetPageSize(buf));
 					return buf;
@@ -877,7 +931,7 @@ _bt_parent_deletion_safe(Relation rel, BlockNumber target, BTStack stack)
  * frequently.
  */
 int
-_bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
+_bt_pagedel(Relation rel, Buffer buf, BTStack stack)
 {
 	int			result;
 	BlockNumber target,
@@ -1207,14 +1261,13 @@ _bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
 
 	/*
 	 * Mark the page itself deleted.  It can be recycled when all current
-	 * transactions are gone; or immediately if we're doing VACUUM FULL.
+	 * transactions are gone.
 	 */
 	page = BufferGetPage(buf);
 	opaque = (BTPageOpaque) PageGetSpecialPointer(page);
 	opaque->btpo_flags &= ~BTP_HALF_DEAD;
 	opaque->btpo_flags |= BTP_DELETED;
-	opaque->btpo.xact =
-		vacuum_full ? FrozenTransactionId : ReadNewTransactionId();
+	opaque->btpo.xact = ReadNewTransactionId();
 
 	/* And update the metapage, if needed */
 	if (BufferIsValid(metabuf))
@@ -1350,7 +1403,7 @@ _bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
 	{
 		/* recursive call will release pbuf */
 		_bt_relbuf(rel, rbuf);
-		result = _bt_pagedel(rel, pbuf, stack->bts_parent, vacuum_full) + 1;
+		result = _bt_pagedel(rel, pbuf, stack->bts_parent) + 1;
 		_bt_relbuf(rel, buf);
 	}
 	else if (parent_one_child && rightsib_empty)
@@ -1358,7 +1411,7 @@ _bt_pagedel(Relation rel, Buffer buf, BTStack stack, bool vacuum_full)
 		_bt_relbuf(rel, pbuf);
 		_bt_relbuf(rel, buf);
 		/* recursive call will release rbuf */
-		result = _bt_pagedel(rel, rbuf, stack, vacuum_full) + 1;
+		result = _bt_pagedel(rel, rbuf, stack) + 1;
 	}
 	else
 	{

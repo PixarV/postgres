@@ -244,10 +244,15 @@ DefineIndex(RangeVar *heapRelation,
 
 	/*
 	 * Force shared indexes into the pg_global tablespace.	This is a bit of a
-	 * hack but seems simpler than marking them in the BKI commands.
+	 * hack but seems simpler than marking them in the BKI commands.  On the
+	 * other hand, if it's not shared, don't allow it to be placed there.
 	 */
 	if (rel->rd_rel->relisshared)
 		tablespaceId = GLOBALTABLESPACE_OID;
+	else if (tablespaceId == GLOBALTABLESPACE_OID)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("only shared relations can be placed in pg_global tablespace")));
 
 	/*
 	 * Choose the index column names.
@@ -268,9 +273,7 @@ DefineIndex(RangeVar *heapRelation,
 	/*
 	 * look up the access method, verify it can handle the requested features
 	 */
-	tuple = SearchSysCache(AMNAME,
-						   PointerGetDatum(accessMethodName),
-						   0, 0, 0);
+	tuple = SearchSysCache1(AMNAME, PointerGetDatum(accessMethodName));
 	if (!HeapTupleIsValid(tuple))
 	{
 		/*
@@ -282,9 +285,7 @@ DefineIndex(RangeVar *heapRelation,
 			ereport(NOTICE,
 					(errmsg("substituting access method \"gist\" for obsolete method \"rtree\"")));
 			accessMethodName = "gist";
-			tuple = SearchSysCache(AMNAME,
-								   PointerGetDatum(accessMethodName),
-								   0, 0, 0);
+			tuple = SearchSysCache1(AMNAME, PointerGetDatum(accessMethodName));
 		}
 
 		if (!HeapTupleIsValid(tuple))
@@ -595,9 +596,8 @@ DefineIndex(RangeVar *heapRelation,
 	 */
 	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
 
-	indexTuple = SearchSysCacheCopy(INDEXRELID,
-									ObjectIdGetDatum(indexRelationId),
-									0, 0, 0);
+	indexTuple = SearchSysCacheCopy1(INDEXRELID,
+									 ObjectIdGetDatum(indexRelationId));
 	if (!HeapTupleIsValid(indexTuple))
 		elog(ERROR, "cache lookup failed for index %u", indexRelationId);
 	indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -736,9 +736,8 @@ DefineIndex(RangeVar *heapRelation,
 	 */
 	pg_index = heap_open(IndexRelationId, RowExclusiveLock);
 
-	indexTuple = SearchSysCacheCopy(INDEXRELID,
-									ObjectIdGetDatum(indexRelationId),
-									0, 0, 0);
+	indexTuple = SearchSysCacheCopy1(INDEXRELID,
+									 ObjectIdGetDatum(indexRelationId));
 	if (!HeapTupleIsValid(indexTuple))
 		elog(ERROR, "cache lookup failed for index %u", indexRelationId);
 	indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
@@ -980,9 +979,8 @@ ComputeIndexAttrs(IndexInfo *indexInfo,
 				 * so fetch the name of the selected opfamily for use in the
 				 * error message.
 				 */
-				opftuple = SearchSysCache(OPFAMILYOID,
-										  ObjectIdGetDatum(opfamily),
-										  0, 0, 0);
+				opftuple = SearchSysCache1(OPFAMILYOID,
+										   ObjectIdGetDatum(opfamily));
 				if (!HeapTupleIsValid(opftuple))
 					elog(ERROR, "cache lookup failed for opfamily %u",
 						 opfamily);
@@ -1108,11 +1106,10 @@ GetIndexOpClass(List *opclass, Oid attrType,
 		Oid			namespaceId;
 
 		namespaceId = LookupExplicitNamespace(schemaname);
-		tuple = SearchSysCache(CLAAMNAMENSP,
-							   ObjectIdGetDatum(accessMethodId),
-							   PointerGetDatum(opcname),
-							   ObjectIdGetDatum(namespaceId),
-							   0);
+		tuple = SearchSysCache3(CLAAMNAMENSP,
+								ObjectIdGetDatum(accessMethodId),
+								PointerGetDatum(opcname),
+								ObjectIdGetDatum(namespaceId));
 	}
 	else
 	{
@@ -1123,9 +1120,7 @@ GetIndexOpClass(List *opclass, Oid attrType,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
 					 errmsg("operator class \"%s\" does not exist for access method \"%s\"",
 							opcname, accessMethodName)));
-		tuple = SearchSysCache(CLAOID,
-							   ObjectIdGetDatum(opClassId),
-							   0, 0, 0);
+		tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(opClassId));
 	}
 
 	if (!HeapTupleIsValid(tuple))
@@ -1537,9 +1532,7 @@ relationHasPrimaryKey(Relation rel)
 		Oid			indexoid = lfirst_oid(indexoidscan);
 		HeapTuple	indexTuple;
 
-		indexTuple = SearchSysCache(INDEXRELID,
-									ObjectIdGetDatum(indexoid),
-									0, 0, 0);
+		indexTuple = SearchSysCache1(INDEXRELID, ObjectIdGetDatum(indexoid));
 		if (!HeapTupleIsValid(indexTuple))		/* should not happen */
 			elog(ERROR, "cache lookup failed for index %u", indexoid);
 		result = ((Form_pg_index) GETSTRUCT(indexTuple))->indisprimary;
@@ -1564,9 +1557,7 @@ ReindexIndex(RangeVar *indexRelation)
 	HeapTuple	tuple;
 
 	indOid = RangeVarGetRelid(indexRelation, false);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(indOid),
-						   0, 0, 0);
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(indOid));
 	if (!HeapTupleIsValid(tuple))		/* shouldn't happen */
 		elog(ERROR, "cache lookup failed for relation %u", indOid);
 
@@ -1583,7 +1574,7 @@ ReindexIndex(RangeVar *indexRelation)
 
 	ReleaseSysCache(tuple);
 
-	reindex_index(indOid);
+	reindex_index(indOid, false);
 }
 
 /*
@@ -1597,9 +1588,7 @@ ReindexTable(RangeVar *relation)
 	HeapTuple	tuple;
 
 	heapOid = RangeVarGetRelid(relation, false);
-	tuple = SearchSysCache(RELOID,
-						   ObjectIdGetDatum(heapOid),
-						   0, 0, 0);
+	tuple = SearchSysCache1(RELOID, ObjectIdGetDatum(heapOid));
 	if (!HeapTupleIsValid(tuple))		/* shouldn't happen */
 		elog(ERROR, "cache lookup failed for relation %u", heapOid);
 
@@ -1615,16 +1604,9 @@ ReindexTable(RangeVar *relation)
 		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_CLASS,
 					   relation->relname);
 
-	/* Can't reindex shared tables except in standalone mode */
-	if (((Form_pg_class) GETSTRUCT(tuple))->relisshared && IsUnderPostmaster)
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("shared table \"%s\" can only be reindexed in stand-alone mode",
-						relation->relname)));
-
 	ReleaseSysCache(tuple);
 
-	if (!reindex_relation(heapOid, true))
+	if (!reindex_relation(heapOid, true, false))
 		ereport(NOTICE,
 				(errmsg("table \"%s\" has no indexes",
 						relation->relname)));
@@ -1717,12 +1699,6 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 				continue;
 		}
 
-		if (IsUnderPostmaster)	/* silently ignore shared tables */
-		{
-			if (classtuple->relisshared)
-				continue;
-		}
-
 		if (HeapTupleGetOid(tuple) == RelationRelationId)
 			continue;			/* got it already */
 
@@ -1743,7 +1719,7 @@ ReindexDatabase(const char *databaseName, bool do_system, bool do_user)
 		StartTransactionCommand();
 		/* functions in indexes may want a snapshot set */
 		PushActiveSnapshot(GetTransactionSnapshot());
-		if (reindex_relation(relid, true))
+		if (reindex_relation(relid, true, false))
 			ereport(NOTICE,
 					(errmsg("table \"%s\" was reindexed",
 							get_rel_name(relid))));

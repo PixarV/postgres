@@ -338,16 +338,36 @@ use strict;
       <primary>spi_exec_query</primary>
       <secondary>in PL/Perl</secondary>
      </indexterm>
+     <indexterm>
+      <primary>spi_query</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_fetchrow</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_prepare</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_exec_prepared</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_query_prepared</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_cursor_close</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
+     <indexterm>
+      <primary>spi_freeplan</primary>
+      <secondary>in PL/Perl</secondary>
+     </indexterm>
 
      <term><literal><function>spi_exec_query</>(<replaceable>query</replaceable> [, <replaceable>max-rows</replaceable>])</literal></term>
-     <term><literal><function>spi_query</>(<replaceable>command</replaceable>)</literal></term>
-     <term><literal><function>spi_fetchrow</>(<replaceable>cursor</replaceable>)</literal></term>
-     <term><literal><function>spi_prepare</>(<replaceable>command</replaceable>, <replaceable>argument types</replaceable>)</literal></term>
-     <term><literal><function>spi_exec_prepared</>(<replaceable>plan</replaceable>, <replaceable>arguments</replaceable>)</literal></term>
-     <term><literal><function>spi_query_prepared</>(<replaceable>plan</replaceable> [, <replaceable>attributes</replaceable>], <replaceable>arguments</replaceable>)</literal></term>
-     <term><literal><function>spi_cursor_close</>(<replaceable>cursor</replaceable>)</literal></term>
-     <term><literal><function>spi_freeplan</>(<replaceable>plan</replaceable>)</literal></term>
-
      <listitem>
       <para>
        <literal>spi_exec_query</literal> executes an SQL command and
@@ -420,7 +440,15 @@ $$ LANGUAGE plperl;
 SELECT * FROM test_munge();
 </programlisting>
     </para>
+    </listitem>
+    </varlistentry>
 
+    <varlistentry>
+     <term><literal><function>spi_query</>(<replaceable>command</replaceable>)</literal></term>
+     <term><literal><function>spi_fetchrow</>(<replaceable>cursor</replaceable>)</literal></term>
+     <term><literal><function>spi_cursor_close</>(<replaceable>cursor</replaceable>)</literal></term>
+
+    <listitem>
     <para>
     <literal>spi_query</literal> and <literal>spi_fetchrow</literal>
     work together as a pair for row sets which might be large, or for cases
@@ -460,12 +488,40 @@ SELECT * from lotsa_md5(500);
     </para>
 
     <para>
+     Normally, <function>spi_fetchrow</> should be repeated until it
+     returns <literal>undef</literal>, indicating that there are no more
+     rows to read.  The cursor returned by <literal>spi_query</literal>
+     is automatically freed when
+     <function>spi_fetchrow</> returns <literal>undef</literal>.
+     If you do not wish to read all the rows, instead call
+     <function>spi_cursor_close</> to free the cursor.
+     Failure to do so will result in memory leaks.
+    </para>
+
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal><function>spi_prepare</>(<replaceable>command</replaceable>, <replaceable>argument types</replaceable>)</literal></term>
+     <term><literal><function>spi_query_prepared</>(<replaceable>plan</replaceable>, <replaceable>arguments</replaceable>)</literal></term>
+     <term><literal><function>spi_exec_prepared</>(<replaceable>plan</replaceable> [, <replaceable>attributes</replaceable>], <replaceable>arguments</replaceable>)</literal></term>
+     <term><literal><function>spi_freeplan</>(<replaceable>plan</replaceable>)</literal></term>
+
+    <listitem>
+    <para>
     <literal>spi_prepare</literal>, <literal>spi_query_prepared</literal>, <literal>spi_exec_prepared</literal>,
-    and <literal>spi_freeplan</literal> implement the same functionality but for prepared queries. Once
-    a query plan is prepared by a call to <literal>spi_prepare</literal>, the plan can be used instead
+    and <literal>spi_freeplan</literal> implement the same functionality but for prepared queries.
+    <literal>spi_prepare</literal> accepts a query string with numbered argument placeholders ($1, $2, etc)
+    and a string list of argument types:
+<programlisting>
+$plan = spi_prepare('SELECT * FROM test WHERE id &gt; $1 AND name = $2', 'INTEGER', 'TEXT');
+</programlisting>
+    Once a query plan is prepared by a call to <literal>spi_prepare</literal>, the plan can be used instead
     of the string query, either in <literal>spi_exec_prepared</literal>, where the result is the same as returned
     by <literal>spi_exec_query</literal>, or in <literal>spi_query_prepared</literal> which returns a cursor
     exactly as <literal>spi_query</literal> does, which can be later passed to <literal>spi_fetchrow</literal>.
+    The optional second parameter to <literal>spi_exec_prepared</literal> is a hash reference of attributes;
+    the only attribute currently supported is <literal>limit</literal>, which sets the maximum number of rows returned by a query. 
     </para>
 
     <para>
@@ -476,18 +532,18 @@ SELECT * from lotsa_md5(500);
 
     <para>
     <programlisting>
-CREATE OR REPLACE FUNCTION init() RETURNS INTEGER AS $$
+CREATE OR REPLACE FUNCTION init() RETURNS VOID AS $$
         $_SHARED{my_plan} = spi_prepare( 'SELECT (now() + $1)::date AS now', 'INTERVAL');
 $$ LANGUAGE plperl;
 
 CREATE OR REPLACE FUNCTION add_time( INTERVAL ) RETURNS TEXT AS $$
         return spi_exec_prepared(
                 $_SHARED{my_plan},
-                $_[0],
+                $_[0]
         )->{rows}->[0]->{now};
 $$ LANGUAGE plperl;
 
-CREATE OR REPLACE FUNCTION done() RETURNS INTEGER AS $$
+CREATE OR REPLACE FUNCTION done() RETURNS VOID AS $$
         spi_freeplan( $_SHARED{my_plan});
         undef $_SHARED{my_plan};
 $$ LANGUAGE plperl;
@@ -509,15 +565,42 @@ SELECT done();
     </para>
 
     <para>
-     Normally, <function>spi_fetchrow</> should be repeated until it
-     returns <literal>undef</literal>, indicating that there are no more
-     rows to read.  The cursor is automatically freed when
-     <function>spi_fetchrow</> returns <literal>undef</literal>.
-     If you do not wish to read all the rows, instead call
-     <function>spi_cursor_close</> to free the cursor.
-     Failure to do so will result in memory leaks.
+    Another example illustrates usage of an optional parameter in <literal>spi_exec_prepared</literal>:
     </para>
-     </listitem>
+
+    <para>
+    <programlisting>
+CREATE TABLE hosts AS SELECT id, ('192.168.1.'||id)::inet AS address FROM generate_series(1,3) AS id;
+
+CREATE OR REPLACE FUNCTION init_hosts_query() RETURNS VOID AS $$
+        $_SHARED{plan} = spi_prepare('SELECT * FROM hosts WHERE address &lt;&lt; $1', 'inet');
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION query_hosts(inet) RETURNS SETOF hosts AS $$
+        return spi_exec_prepared(
+                $_SHARED{plan},
+                {limit =&gt; 2},
+                $_[0]
+        )->{rows};
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION release_hosts_query() RETURNS VOID AS $$
+        spi_freeplan($_SHARED{plan});
+        undef $_SHARED{plan};
+$$ LANGUAGE plperl;
+
+SELECT init_hosts_query();
+SELECT query_hosts('192.168.1.0/30');
+SELECT release_hosts_query();
+
+    query_hosts    
+-----------------
+ (1,192.168.1.1)
+ (2,192.168.1.2)
+(2 rows)
+    </programlisting>
+    </para>
+    </listitem>
     </varlistentry>
    </variablelist>
  </sect2>
@@ -747,6 +830,13 @@ $$ LANGUAGE plperl;
    (You could have replaced the above with the one-liner
    <literal>return $_SHARED{myquote}-&gt;($_[0]);</literal>
    at the expense of readability.)
+  </para>
+
+  <para>
+    The <varname>%_SHARED</varname> variable and other global state within
+    the language is public data, available to all PL/Perl functions within a
+    session. Use with care, especially in situations that involve use of 
+    multiple roles or <literal>SECURITY DEFINER</> functions.
   </para>
  </sect1>
 
@@ -1044,26 +1134,27 @@ CREATE TRIGGER test_valid_id_trig
 
   <variablelist>
 
-     <varlistentry id="guc-plperl-on-perl-init" xreflabel="plperl.on_perl_init">
-      <term><varname>plperl.on_perl_init</varname> (<type>string</type>)</term>
+     <varlistentry id="guc-plperl-on-init" xreflabel="plperl.on_init">
+      <term><varname>plperl.on_init</varname> (<type>string</type>)</term>
       <indexterm>
-       <primary><varname>plperl.on_perl_init</> configuration parameter</primary>
+       <primary><varname>plperl.on_init</> configuration parameter</primary>
       </indexterm>
       <listitem>
        <para>
-       Specifies perl code to be executed when a perl interpreter is first initialized.
+       Specifies Perl code to be executed when a Perl interpreter is first initialized
+       and before it is specialized for use by <literal>plperl</> or <literal>plperlu</>.
        The SPI functions are not available when this code is executed.
        If the code fails with an error it will abort the initialization of the interpreter
        and propagate out to the calling query, causing the current transaction
        or subtransaction to be aborted.
        </para>
        <para>
-       The perl code is limited to a single string. Longer code can be placed
-       into a module and loaded by the <literal>on_perl_init</> string.
+       The Perl code is limited to a single string. Longer code can be placed
+       into a module and loaded by the <literal>on_init</> string.
        Examples:
 <programlisting>
-plplerl.on_perl_init = '$ENV{NYTPROF}="start=no"; require Devel::NYTProf::PgPLPerl'
-plplerl.on_perl_init = 'use lib "/my/app"; use MyApp::PgInit;'
+plplerl.on_init = '$ENV{NYTPROF}="start=no"; require Devel::NYTProf::PgPLPerl'
+plplerl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'
 </programlisting>
        </para>
        <para>
@@ -1073,6 +1164,56 @@ plplerl.on_perl_init = 'use lib "/my/app"; use MyApp::PgInit;'
        </para>
        <para>
        This parameter can only be set in the postgresql.conf file or on the server command line.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-plperl-on-plperl-init" xreflabel="plperl.on_plperl_init">
+      <term><varname>plperl.on_plperl_init</varname> (<type>string</type>)</term>
+      <term><varname>plperl.on_plperlu_init</varname> (<type>string</type>)</term>
+      <indexterm>
+       <primary><varname>plperl.on_plperl_init</> configuration parameter</primary>
+      </indexterm>
+      <indexterm>
+       <primary><varname>plperl.on_plperlu_init</> configuration parameter</primary>
+      </indexterm>
+      <listitem>
+       <para>
+       These parameters specify Perl code to be executed when the
+       <literal>plperl</>, or <literal>plperlu</> language is first used in a
+       session.  Changes to these parameters after the corresponding language
+       has been used will have no effect.
+       The SPI functions are not available when this code is executed.
+       Only superusers can change these settings.
+       The Perl code in <literal>plperl.on_plperl_init</> can only perform trusted operations.
+       </para>
+       <para>
+       The effect of setting these parameters is very similar to executing a
+       <literal>DO</> command with the Perl code before any other use of the
+       language.  The parameters are useful when you want to execute the Perl
+       code automatically on every connection, or when a connection is not
+       interactive. The parameters can be used by non-superusers by having a
+       superuser execute an <literal>ALTER USER ... SET ...</> command.
+       For example:
+<programlisting>
+ALTER USER joe SET plplerl.on_plperl_init = '$_SHARED{debug} = 1';
+</programlisting>
+       </para>
+       <para>
+       If the code fails with an error it will abort the initialization and
+       propagate out to the calling query, causing the current transaction or
+       subtransaction to be aborted. Any changes within Perl won't be undone.
+       If the language is used again the initialization will be repeated.
+       </para>
+       <para>
+       The difference between these two settings and the 
+       <literal>plperl.on_init</> setting is that these can be used for
+       settings specific to the trusted or untrusted language variant, such
+       as setting values in the <varname>%_SHARED</> variable. By contrast,
+       <literal>plperl.on_init</> is more useful for doing things like
+       setting the library search path for <productname>Perl</> or 
+       loading Perl modules that don't interact directly with 
+       <productname>PostgreSQL</>.
        </para>
       </listitem>
      </varlistentry>

@@ -2166,7 +2166,7 @@ CopyFrom(CopyState cstate)
 
 			if (resultRelInfo->ri_NumIndices > 0)
 				recheckIndexes = ExecInsertIndexTuples(slot, &(tuple->t_self),
-													   estate, false);
+													   estate);
 
 			/* AFTER ROW INSERT Triggers */
 			ExecARInsertTriggers(estate, resultRelInfo, tuple,
@@ -2225,7 +2225,13 @@ CopyFrom(CopyState cstate)
 	 * indexes since those use WAL anyway)
 	 */
 	if (hi_options & HEAP_INSERT_SKIP_WAL)
+	{
+		char reason[NAMEDATALEN + 30];
+		snprintf(reason, sizeof(reason), "COPY FROM on \"%s\"",
+				 RelationGetRelationName(cstate->rel));
+		XLogReportUnloggedStatement(reason);
 		heap_sync(cstate->rel);
+	}
 }
 
 
