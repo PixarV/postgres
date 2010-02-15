@@ -14,12 +14,17 @@
 #include "postgres.h"
 
 /*
- * This indicates whether pgwin32_recv() is blocked until the receive
- * operation has been finished. A value of zero blocks it even if
- * the socket is set to non-blocking mode. A non-zero value makes it
- * return immediately whether data is available or not.
+ * Indicate if pgwin32_recv() should operate in non-blocking mode.
+ *
+ * Since the socket emulation layer always sets the actual socket to
+ * non-blocking mode in order to be able to deliver signals, we must
+ * specify this in a separate flag if we actually need non-blocking
+ * operation.
+ *
+ * This flag changes the behaviour *globally* for all socket operations,
+ * so it should only be set for very short periods of time.
  */
-bool pgwin32_noblock = 0;
+bool pgwin32_noblock = false;
 
 #undef socket
 #undef accept
