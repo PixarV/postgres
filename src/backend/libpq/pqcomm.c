@@ -838,7 +838,7 @@ pq_getbyte_if_available(unsigned char *c)
 
 	/* Temporarily put the socket into non-blocking mode */
 #ifdef WIN32
-	pgwin32_noblock = true;
+	pgwin32_noblock = 1;
 #else
 	if (!pg_set_noblock(MyProcPort->sock))
 		ereport(ERROR,
@@ -856,7 +856,7 @@ pq_getbyte_if_available(unsigned char *c)
 		 * mode, so treat failure as FATAL.
 		 */
 #ifdef WIN32
-		pgwin32_noblock = false;
+		pgwin32_noblock = 0;
 #else
 		if (!pg_set_block(MyProcPort->sock))
 			ereport(FATAL,
@@ -867,7 +867,7 @@ pq_getbyte_if_available(unsigned char *c)
 	}
 	PG_END_TRY();
 #ifdef WIN32
-	pgwin32_noblock = false;
+	pgwin32_noblock = 0;
 #else
 	if (!pg_set_block(MyProcPort->sock))
 		ereport(FATAL,

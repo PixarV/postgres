@@ -24,7 +24,7 @@
  * This flag changes the behaviour *globally* for all socket operations,
  * so it should only be set for very short periods of time.
  */
-bool pgwin32_noblock = false;
+int	pgwin32_noblock = 0;
 
 #undef socket
 #undef accept
