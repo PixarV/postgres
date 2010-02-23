@@ -132,6 +132,7 @@ extern bool optimize_bounded_sort;
 
 #ifdef USE_SSL
 extern char *SSLCipherSuites;
+extern int	ssl_renegotiation_limit;
 #endif
 
 static void set_config_sourcefile(const char *name, char *sourcefile,
@@ -1966,6 +1967,16 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&tcp_keepalives_interval,
 		0, 0, INT_MAX, assign_tcp_keepalives_interval, show_tcp_keepalives_interval
+	},
+
+	{
+		{"ssl_renegotiation_limit", PGC_SUSET, CONN_AUTH_SECURITY,
+			gettext_noop("Set the amount of traffic to send and receive before renegotiating the encryption keys."),
+			NULL,
+			GUC_UNIT_KB,
+		},
+		&ssl_renegotiation_limit,
+		512 * 1024, 0, MAX_KILOBYTES, NULL, NULL
 	},
 
 	{

@@ -98,7 +98,7 @@ static const char *SSLerrmessage(void);
  *	How much data can be sent across a secure connection
  *	(total in both directions) before we require renegotiation.
  */
-#define RENEGOTIATION_LIMIT (512 * 1024 * 1024)
+int ssl_renegotiation_limit;
 
 static SSL_CTX *SSL_context = NULL;
 static bool ssl_loaded_verify_locations = false;
@@ -320,7 +320,7 @@ secure_write(Port *port, void *ptr, size_t len)
 	{
 		int			err;
 
-		if (port->count > RENEGOTIATION_LIMIT)
+		if (ssl_renegotiation_limit && port->count > ssl_renegotiation_limit * 1024)
 		{
 			SSL_set_session_id_context(port->ssl, (void *) &SSL_context,
 									   sizeof(SSL_context));
