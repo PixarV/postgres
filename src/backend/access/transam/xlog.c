@@ -2686,13 +2686,10 @@ XLogFileClose(void)
 	 * WAL segment files will not be re-read in normal operation, so we advise
 	 * the OS to release any cached pages.	But do not do so if WAL archiving
 	 * or streaming is active, because archiver and walsender process could use
-	 * the cache to read the WAL segment.  Also, don't bother with it if we
-	 * are using O_DIRECT, since the kernel is presumably not caching in that
-	 * case.
+	 * the cache to read the WAL segment.
 	 */
 #if defined(USE_POSIX_FADVISE) && defined(POSIX_FADV_DONTNEED)
-	if (!XLogIsNeeded() &&
-		(get_sync_bit(sync_method) & PG_O_DIRECT) == 0)
+	if (!XLogIsNeeded())
 		(void) posix_fadvise(openLogFile, 0, 0, POSIX_FADV_DONTNEED);
 #endif
 
@@ -7652,9 +7649,28 @@ xlog_outrec(StringInfo buf, XLogRecord *record)
 static int
 get_sync_bit(int method)
 {
+	int o_direct_flag = 0;
+
 	/* If fsync is disabled, never open in sync mode */
 	if (!enableFsync)
 		return 0;
+
+	/*
+	 * Optimize writes by bypassing kernel cache with O_DIRECT when using
+	 * O_SYNC, O_DSYNC or O_FSYNC. But only if archiving and streaming are
+	 * disabled, otherwise the archive command or walsender process will
+	 * read the WAL soon after writing it, which is guaranteed to cause a
+	 * physical read if we bypassed the kernel cache. We also skip the
+	 * posix_fadvise(POSIX_FADV_DONTNEED) call in XLogFileClose() for the
+	 * same reason.
+	 *
+	 * Never use O_DIRECT in walreceiver process for similar reasons; the WAL
+	 * written by walreceiver is normally read by the startup process soon
+	 * after its written. Also, walreceiver performs unaligned writes, which
+	 * don't work with O_DIRECT, so it is required for correctness too.
+	 */
+	if (!XLogIsNeeded() && !am_walreceiver)
+		o_direct_flag = PG_O_DIRECT;
 
 	switch (method)
 	{
@@ -7670,11 +7686,11 @@ get_sync_bit(int method)
 			return 0;
 #ifdef OPEN_SYNC_FLAG
 		case SYNC_METHOD_OPEN:
-			return OPEN_SYNC_FLAG;
+			return OPEN_SYNC_FLAG | o_direct_flag;
 #endif
 #ifdef OPEN_DATASYNC_FLAG
 		case SYNC_METHOD_OPEN_DSYNC:
-			return OPEN_DATASYNC_FLAG;
+			return OPEN_DATASYNC_FLAG | o_direct_flag;
 #endif
 		default:
 			/* can't happen (unless we are out of sync with option array) */
@@ -7958,7 +7974,7 @@ pg_start_backup_callback(int code, Datum arg)
  * created by pg_start_backup, creating a backup history file in pg_xlog
  * instead (whence it will immediately be archived). The backup history file
  * contains the same info found in the label file, plus the backup-end time
- * and WAL location. Before 8.5, the backup-end time was read from the backup
+ * and WAL location. Before 9.0, the backup-end time was read from the backup
  * history file at the beginning of archive recovery, but we now use the WAL
  * record for that and the file is for informational and debug purposes only.
  *
@@ -8052,7 +8068,7 @@ pg_stop_backup(PG_FUNCTION_ARGS)
 	 */
 	RequestXLogSwitch();
 
-	XLByteToSeg(stoppoint, _logId, _logSeg);
+	XLByteToPrevSeg(stoppoint, _logId, _logSeg);
 	XLogFileName(stopxlogfilename, ThisTimeLineID, _logId, _logSeg);
 
 	/* Use the log timezone here, not the session timezone */

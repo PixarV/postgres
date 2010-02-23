@@ -28,12 +28,6 @@
   if it is able.
  </para>
 
- <para>
-  Higher level features built on this protocol (for example, how
-  <application>libpq</application> passes certain environment
-  variables when the connection is established) are covered elsewhere.
- </para>
-
   <para>
    In order to serve multiple clients efficiently, the server launches
    a new <quote>backend</> process for each client.
@@ -1101,7 +1095,7 @@
     <literal>standard_conforming_strings</> was not reported by releases
     before 8.1;
     <literal>IntervalStyle</> was not reported by releases before 8.4;
-    <literal>application_name</> was not reported by releases before 8.5.)
+    <literal>application_name</> was not reported by releases before 9.0.)
     Note that
     <literal>server_version</>,
     <literal>server_encoding</> and

@@ -90,16 +90,18 @@ copydir(char *fromdir, char *todir, bool recurse)
 		else if (S_ISREG(fst.st_mode))
 			copy_file(fromfile, tofile);
 	}
+	FreeDir(xldir);
 
 	/*
-	 * Be paranoid here and fsync all files to ensure we catch problems.
+	 * Be paranoid here and fsync all files to ensure the copy is really done.
 	 */
+	xldir = AllocateDir(todir);
 	if (xldir == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not open directory \"%s\": %m", fromdir)));
+				 errmsg("could not open directory \"%s\": %m", todir)));
 
-	while ((xlde = ReadDir(xldir, fromdir)) != NULL)
+	while ((xlde = ReadDir(xldir, todir)) != NULL)
 	{
 		struct stat fst;
 
@@ -109,25 +111,29 @@ copydir(char *fromdir, char *todir, bool recurse)
 
 		snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
 
-		/* We don't need to sync directories here since the recursive
-		 * copydir will do it before it returns */
-		if (lstat(fromfile, &fst) < 0)
+		/*
+		 * We don't need to sync subdirectories here since the recursive
+		 * copydir will do it before it returns
+		 */
+		if (lstat(tofile, &fst) < 0)
 			ereport(ERROR,
 					(errcode_for_file_access(),
-					 errmsg("could not stat file \"%s\": %m", fromfile)));
+					 errmsg("could not stat file \"%s\": %m", tofile)));
+
 		if (S_ISREG(fst.st_mode))
-		{
 			fsync_fname(tofile);
-		}
 	}
 	FreeDir(xldir);
 
 #ifdef NOTYET
-	/* It's important to fsync the destination directory itself as
+	/*
+	 * It's important to fsync the destination directory itself as
 	 * individual file fsyncs don't guarantee that the directory entry
 	 * for the file is synced. Recent versions of ext4 have made the
 	 * window much wider but it's been true for ext3 and other
-	 * filesystems in the past 
+	 * filesystems in the past.
+	 *
+	 * However we can't do this just yet, it has portability issues.
 	 */
 	fsync_fname(todir);
 #endif
@@ -208,7 +214,6 @@ copy_file(char *fromfile, char *tofile)
 }
 
 
-
 /*
  * fsync a file
  */
@@ -216,7 +221,7 @@ static void
 fsync_fname(char *fname)
 {
 	int	fd = BasicOpenFile(fname, 
-						   O_RDONLY | PG_BINARY,
+						   O_RDWR | PG_BINARY,
 						   S_IRUSR | S_IWUSR);
 
 	if (fd < 0)
@@ -228,5 +233,6 @@ fsync_fname(char *fname)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", fname)));
+
 	close(fd);
 }

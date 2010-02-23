@@ -534,6 +534,9 @@ pg_notify(PG_FUNCTION_ARGS)
 	else
 		payload = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
+	/* For NOTIFY as a statement, this is checked in ProcessUtility */
+	PreventCommandDuringRecovery("NOTIFY");
+
 	Async_Notify(channel, payload);
 
 	PG_RETURN_VOID();
@@ -1951,6 +1954,7 @@ asyncQueueReadAllNotifications(void)
  * The function returns true once we have reached the stop position or an
  * uncommitted notification, and false if we have finished with the page.
  * In other words: once it returns true there is no need to look further.
+ * The QueuePosition *current is advanced past all processed messages.
  */
 static bool
 asyncQueueProcessPageEntries(QueuePosition *current,
@@ -1963,10 +1967,12 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 
 	do
 	{
-		if (QUEUE_POS_EQUAL(*current, stop))
+		QueuePosition	thisentry = *current;
+
+		if (QUEUE_POS_EQUAL(thisentry, stop))
 			break;
 
-		qe = (AsyncQueueEntry *) (page_buffer + QUEUE_POS_OFFSET(*current));
+		qe = (AsyncQueueEntry *) (page_buffer + QUEUE_POS_OFFSET(thisentry));
 
 		/*
 		 * Advance *current over this message, possibly to the next page.
@@ -2002,8 +2008,14 @@ asyncQueueProcessPageEntries(QueuePosition *current,
 			{
 				/*
 				 * The transaction has neither committed nor aborted so far,
-				 * so we can't process its message yet.  Break out of the loop.
+				 * so we can't process its message yet.  Break out of the loop,
+				 * but first back up *current so we will reprocess the message
+				 * next time.  (Note: it is unlikely but not impossible for
+				 * TransactionIdDidCommit to fail, so we can't really avoid
+				 * this advance-then-back-up behavior when dealing with an
+				 * uncommitted message.)
 				 */
+				*current = thisentry;
 				reachedStop = true;
 				break;
 			}

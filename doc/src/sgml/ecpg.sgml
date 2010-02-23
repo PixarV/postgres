@@ -2439,7 +2439,7 @@ EXEC SQL DESCRIBE stmt1 INTO SQL DESCRIPTOR mydesc;
    </para>
 
    <para>
-    Before PostgreSQL 8.5, the <literal>SQL</literal> keyword was optional,
+    Before PostgreSQL 9.0, the <literal>SQL</literal> keyword was optional,
     so using <literal>DESCRIPTOR</literal> and <literal>SQL DESCRIPTOR</literal>
     produced named SQL Descriptor Areas. Now it is mandatory, omitting
     the <literal>SQL</literal> keyword produces SQLDA Descriptor Areas,
@@ -2882,7 +2882,7 @@ struct sqlname
    program and most of the additional functions of the <productname>Informix</productname> compatibility
    mode allow you to operate on those C host program types. Note however that
    the extent of the compatibility is limited. It does not try to copy <productname>Informix</productname>
-   behaviour; it allows you to do more or less the same operations and gives
+   behavior; it allows you to do more or less the same operations and gives
    you functions that have the same name and the same basic behavior but it is
    no drop-in replacement if you are using <productname>Informix</productname> at the moment. Moreover,
    some of the data types are different. For example,
