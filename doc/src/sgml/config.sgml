@@ -606,7 +606,7 @@ SET ENABLE_SEQSCAN TO OFF;
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-ssl-renegotiation-limit" xreflabel="ssl_renegotiation">
+     <varlistentry id="guc-ssl-renegotiation-limit" xreflabel="ssl_renegotiation_limit">
       <term><varname>ssl_renegotiation_limit</varname> (<type>int</type>)</term>
       <indexterm>
        <primary><varname>ssl_renegotiation_limit</> configuration parameter</primary>
@@ -618,7 +618,7 @@ SET ENABLE_SEQSCAN TO OFF;
         session decreases the chance of doing cryptanalysis when large amounts of data
         are sent, but it also carries a large performance penalty. The sum of
         sent and received traffic is used to check the limit. If the parameter is
-        set to 0, renegotiation is disabled.
+        set to 0, renegotiation is disabled. The default is <literal>512MB</>.
        </para>
       </listitem>
      </varlistentry>
