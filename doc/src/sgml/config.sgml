@@ -616,7 +616,7 @@ SET ENABLE_SEQSCAN TO OFF;
         Specifies how much data can flow over an <acronym>SSL</> encrypted connection
         before renegotiation of the session will take place. Renegotiation of the
         session decreases the chance of doing cryptanalysis when large amounts of data
-        are sent, but is also carries a large performance penalty. The sum of
+        are sent, but it also carries a large performance penalty. The sum of
         sent and received traffic is used to check the limit. If the parameter is
         set to 0, renegotiation is disabled.
        </para>
