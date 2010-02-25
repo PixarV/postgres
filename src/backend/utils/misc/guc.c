@@ -1970,7 +1970,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"ssl_renegotiation_limit", PGC_SUSET, CONN_AUTH_SECURITY,
+		{"ssl_renegotiation_limit", PGC_USERSET, CONN_AUTH_SECURITY,
 			gettext_noop("Set the amount of traffic to send and receive before renegotiating the encryption keys."),
 			NULL,
 			GUC_UNIT_KB,
