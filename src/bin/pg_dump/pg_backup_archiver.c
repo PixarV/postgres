@@ -303,7 +303,15 @@ RestoreArchive(Archive *AHX, RestoreOptions *ropt)
 	ahprintf(AH, "--\n-- PostgreSQL database dump\n--\n\n");
 
 	if (AH->public.verbose)
+	{
+		if (AH->archiveRemoteVersion)
+			ahprintf(AH, "-- Dumped from database version %s\n",
+					 AH->archiveRemoteVersion);
+		if (AH->archiveDumpVersion)
+			ahprintf(AH, "-- Dumped by pg_dump version %s\n",
+					 AH->archiveDumpVersion);
 		dumpTimestamp(AH, "Started on", AH->createDate);
+	}
 
 	if (ropt->single_txn)
 	{
@@ -1851,6 +1859,8 @@ _allocAH(const char *FileSpec, const ArchiveFormat fmt,
 	AH->public.exit_on_error = true;
 	AH->public.n_errors = 0;
 
+	AH->archiveDumpVersion = PG_VERSION;
+
 	AH->createDate = time(NULL);
 
 	AH->intSize = sizeof(int);
@@ -3050,7 +3060,6 @@ ReadHead(ArchiveHandle *AH)
 		AH->archiveRemoteVersion = ReadStr(AH);
 		AH->archiveDumpVersion = ReadStr(AH);
 	}
-
 }
 
 
