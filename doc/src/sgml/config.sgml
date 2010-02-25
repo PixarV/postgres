@@ -620,6 +620,15 @@ SET ENABLE_SEQSCAN TO OFF;
         sent and received traffic is used to check the limit. If the parameter is
         set to 0, renegotiation is disabled. The default is <literal>512MB</>.
        </para>
+       <note>
+        <para>
+         SSL libraries from before November 2009 are insecure when using SSL
+         renegotiation, due to a vulnerability in the SSL protocol. As a stop-gap fix
+         for this vulnerability, some vendors also shipped SSL libraries incapable
+         of doing renegotiation. If any of these libraries are in use on the client
+         or server, SSL renegotiation should be disabled.
+        </para>
+       </note>
       </listitem>
      </varlistentry>
 
