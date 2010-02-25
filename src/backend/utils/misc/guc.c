@@ -117,6 +117,7 @@ extern char *temp_tablespaces;
 extern bool synchronize_seqscans;
 extern bool fullPageWrites;
 extern int	vacuum_defer_cleanup_age;
+extern int	ssl_renegotiation_limit;
 
 int	trace_recovery_messages = LOG;
 
@@ -132,7 +133,6 @@ extern bool optimize_bounded_sort;
 
 #ifdef USE_SSL
 extern char *SSLCipherSuites;
-extern int	ssl_renegotiation_limit;
 #endif
 
 static void set_config_sourcefile(const char *name, char *sourcefile,
