@@ -95,6 +95,7 @@ static void arrayexpr_cleanup_fn(PredIterInfo info);
 static bool predicate_implied_by_simple_clause(Expr *predicate, Node *clause);
 static bool predicate_refuted_by_simple_clause(Expr *predicate, Node *clause);
 static Node *extract_not_arg(Node *clause);
+static Node *extract_strong_not_arg(Node *clause);
 static bool list_member_strip(List *list, Expr *datum);
 static bool btree_predicate_proof(Expr *predicate, Node *clause,
 					  bool refute_it);
@@ -468,6 +469,8 @@ predicate_implied_by_recurse(Node *clause, Node *predicate)
  * Unfortunately we *cannot* use
  *	NOT A R=> B if:					B => A
  * because this type of reasoning fails to prove that B doesn't yield NULL.
+ * We can however make the more limited deduction that
+ *	NOT A R=> A
  *
  * Other comments are as for predicate_implied_by_recurse().
  *----------
@@ -651,21 +654,18 @@ predicate_refuted_by_recurse(Node *clause, Node *predicate)
 
 		case CLASS_ATOM:
 
-#ifdef NOT_USED
-
 			/*
-			 * If A is a NOT-clause, A R=> B if B => A's arg
+			 * If A is a strong NOT-clause, A R=> B if B equals A's arg
 			 *
-			 * Unfortunately not: this would only prove that B is not-TRUE,
-			 * not that it's not NULL either.  Keep this code as a comment
-			 * because it would be useful if we ever had a need for the weak
-			 * form of refutation.
+			 * We cannot make the stronger conclusion that B is refuted if B
+			 * implies A's arg; that would only prove that B is not-TRUE, not
+			 * that it's not NULL either.  Hence use equal() rather than
+			 * predicate_implied_by_recurse().	We could do the latter if we
+			 * ever had a need for the weak form of refutation.
 			 */
-			not_arg = extract_not_arg(clause);
-			if (not_arg &&
-				predicate_implied_by_recurse(predicate, not_arg))
+			not_arg = extract_strong_not_arg(clause);
+			if (not_arg && equal(predicate, not_arg))
 				return true;
-#endif
 
 			switch (pclass)
 			{
@@ -1178,6 +1178,32 @@ extract_not_arg(Node *clause)
 	return NULL;
 }
 
+/*
+ * If clause asserts the falsity of a subclause, return that subclause;
+ * otherwise return NULL.
+ */
+static Node *
+extract_strong_not_arg(Node *clause)
+{
+	if (clause == NULL)
+		return NULL;
+	if (IsA(clause, BoolExpr))
+	{
+		BoolExpr   *bexpr = (BoolExpr *) clause;
+
+		if (bexpr->boolop == NOT_EXPR)
+			return (Node *) linitial(bexpr->args);
+	}
+	else if (IsA(clause, BooleanTest))
+	{
+		BooleanTest *btest = (BooleanTest *) clause;
+
+		if (btest->booltesttype == IS_FALSE)
+			return (Node *) btest->arg;
+	}
+	return NULL;
+}
+
 
 /*
  * Check whether an Expr is equal() to any member of a list, ignoring
@@ -1652,7 +1678,7 @@ get_btree_test_op(Oid pred_op, Oid clause_op, bool refute_it)
 		else if (OidIsValid(clause_op_negator))
 		{
 			clause_tuple = SearchSysCache2(AMOPOPID,
-										   ObjectIdGetDatum(clause_op_negator),
+										 ObjectIdGetDatum(clause_op_negator),
 										   ObjectIdGetDatum(opfamily_id));
 			if (HeapTupleIsValid(clause_tuple))
 			{

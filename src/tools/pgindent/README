@@ -4,18 +4,25 @@ pgindent
 ========
 
 This can format all PostgreSQL *.c and *.h files, but excludes *.y, and
-*.l files.  For source code typedefs, download:
+*.l files. 
 
-	http://www.pgbuildfarm.org/cgi-bin/typedefs.pl
+1) Change directory to the top of the CVS tree.
 
-1) Run 'gmake distclean' from the top of the source tree to remove any
-   derived C files.
+1) Download the typedef file from the builfarm:
 
-2) From the top of the source tree, run:
+	wget -O src/tools/pgindent/typedefs.list http://www.pgbuildfarm.org/cgi-bin/typedefs.pl
+
+2) Download a fresh CVS checkout.
+
+3) Run pgindent:
 
 	find . -name '*.[ch]' -type f -print |
 	egrep -v '/s_lock.h|/ecpg/test/expected/|/snowball/libstemmer/' |
-	xargs -n100 pgindent /tmp/typedefs.pl
+	xargs -n100 pgindent src/tools/pgindent/typedefs.list
+
+4) Remove any files that generate errors.
+
+5) Do a full test build.
 
 
 ---------------------------------------------------------------------------
@@ -41,6 +48,8 @@ regression tests.
 src/include/snowball/libstemmer/ and src/backend/snowball/libstemmer/
 are excluded because those files are imported from an external project,
 not maintained locally, and are machine-generated anyway.
+
+YY_INPUT
 
 ---------------------------------------------------------------------------
 

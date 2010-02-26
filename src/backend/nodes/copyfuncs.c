@@ -160,7 +160,7 @@ _copyResult(Result *from)
 static ModifyTable *
 _copyModifyTable(ModifyTable *from)
 {
-	ModifyTable    *newnode = makeNode(ModifyTable);
+	ModifyTable *newnode = makeNode(ModifyTable);
 
 	/*
 	 * copy node superclass fields
@@ -806,7 +806,7 @@ _copySetOp(SetOp *from)
 static LockRows *
 _copyLockRows(LockRows *from)
 {
-	LockRows	   *newnode = makeNode(LockRows);
+	LockRows   *newnode = makeNode(LockRows);
 
 	/*
 	 * copy node superclass fields
@@ -3237,6 +3237,7 @@ _copyCreatePLangStmt(CreatePLangStmt *from)
 {
 	CreatePLangStmt *newnode = makeNode(CreatePLangStmt);
 
+	COPY_SCALAR_FIELD(replace);
 	COPY_STRING_FIELD(plname);
 	COPY_NODE_FIELD(plhandler);
 	COPY_NODE_FIELD(plinline);

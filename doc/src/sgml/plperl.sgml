@@ -85,12 +85,13 @@ $$ LANGUAGE plperl;
    <para>
     The use of named nested subroutines is dangerous in Perl, especially if
     they refer to lexical variables in the enclosing scope. Because a PL/Perl
-    function is wrapped in a subroutine, any named subroutine you create will
-    be nested. In general, it is far safer to create anonymous subroutines
-    which you call via a coderef. See <literal>Variable "%s" will not stay shared</literal>
-    and <literal>Variable "%s" is not available</literal> in the
-    <citerefentry><refentrytitle>perldiag</></citerefentry> man page for more
-    details.
+    function is wrapped in a subroutine, any named subroutine you place inside
+    one will be nested. In general, it is far safer to create anonymous
+    subroutines which you call via a coderef. For more information, see the
+    entries for <literal>Variable "%s" will not stay shared</literal> and
+    <literal>Variable "%s" is not available</literal> in the
+    <citerefentry><refentrytitle>perldiag</></citerefentry> man page, or
+    search the Internet for <quote>perl nested named subroutine</>.
    </para>
   </note>
 
@@ -1153,8 +1154,8 @@ CREATE TRIGGER test_valid_id_trig
        into a module and loaded by the <literal>on_init</> string.
        Examples:
 <programlisting>
-plplerl.on_init = '$ENV{NYTPROF}="start=no"; require Devel::NYTProf::PgPLPerl'
-plplerl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'
+plperl.on_init = '$ENV{NYTPROF}="start=no"; require Devel::NYTProf::PgPLPerl'
+plperl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'
 </programlisting>
        </para>
        <para>
@@ -1196,7 +1197,7 @@ plplerl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'
        superuser execute an <literal>ALTER USER ... SET ...</> command.
        For example:
 <programlisting>
-ALTER USER joe SET plplerl.on_plperl_init = '$_SHARED{debug} = 1';
+ALTER USER joe SET plperl.on_plperl_init = '$_SHARED{debug} = 1';
 </programlisting>
        </para>
        <para>
