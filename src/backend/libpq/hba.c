@@ -90,6 +90,10 @@ pg_isblank(const char c)
  * double quotes (this allows the inclusion of blanks, but not newlines).
  *
  * The token, if any, is returned at *buf (a buffer of size bufsz).
+ * Also, we set *initial_quote to indicate whether there was quoting before
+ * the first character.  (We use that to prevent "@x" from being treated
+ * as a file inclusion request.  Note that @"x" should be so treated;
+ * we want to allow that to support embedded spaces in file paths.)
  *
  * If successful: store null-terminated token at *buf and return TRUE.
  * If no more tokens on line: set *buf = '\0' and return FALSE.
@@ -104,7 +108,7 @@ pg_isblank(const char c)
  * token.
  */
 static bool
-next_token(FILE *fp, char *buf, int bufsz)
+next_token(FILE *fp, char *buf, int bufsz, bool *initial_quote)
 {
 	int			c;
 	char	   *start_buf = buf;
@@ -113,7 +117,10 @@ next_token(FILE *fp, char *buf, int bufsz)
 	bool		was_quote = false;
 	bool		saw_quote = false;
 
+	/* end_buf reserves two bytes to ensure we can append \n and \0 */
 	Assert(end_buf > start_buf);
+
+	*initial_quote = false;
 
 	/* Move over initial whitespace and commas */
 	while ((c = getc(fp)) != EOF && (pg_isblank(c) || c == ','))
@@ -173,6 +180,8 @@ next_token(FILE *fp, char *buf, int bufsz)
 		{
 			in_quote = !in_quote;
 			saw_quote = true;
+			if (buf == start_buf)
+				*initial_quote = true;
 		}
 
 		c = getc(fp);
@@ -216,12 +225,13 @@ next_token_expand(const char *filename, FILE *file)
 	char	   *comma_str = pstrdup("");
 	bool		got_something = false;
 	bool		trailing_comma;
+	bool		initial_quote;
 	char	   *incbuf;
 	int			needed;
 
 	do
 	{
-		if (!next_token(file, buf, sizeof(buf)))
+		if (!next_token(file, buf, sizeof(buf), &initial_quote))
 			break;
 
 		got_something = true;
@@ -235,7 +245,7 @@ next_token_expand(const char *filename, FILE *file)
 			trailing_comma = false;
 
 		/* Is this referencing a file? */
-		if (buf[0] == '@')
+		if (!initial_quote && buf[0] == '@' && buf[1] != '\0')
 			incbuf = tokenize_inc_file(filename, buf + 1);
 		else
 			incbuf = pstrdup(buf);
@@ -404,7 +414,7 @@ tokenize_file(const char *filename, FILE *file,
 
 	*lines = *line_nums = NIL;
 
-	while (!feof(file))
+	while (!feof(file) && !ferror(file))
 	{
 		buf = next_token_expand(filename, file);
 
@@ -988,6 +998,22 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		return false;
 	}
 
+	if (parsedline->conntype == ctLocal &&
+		parsedline->auth_method == uaGSS)
+	{
+		ereport(LOG,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+			 errmsg("gssapi authentication is not supported on local sockets"),
+				 errcontext("line %d of configuration file \"%s\"",
+							line_num, HbaFileName)));
+		return false;
+	}
+	/*
+	 * SSPI authentication can never be enabled on ctLocal connections, because
+	 * it's only supported on Windows, where ctLocal isn't supported.
+	 */
+
+
 	if (parsedline->conntype != ctHostSSL &&
 		parsedline->auth_method == uaCert)
 	{
@@ -1011,8 +1037,6 @@ parse_hba_line(List *line, int line_num, HbaLine *parsedline)
 		{
 			/*
 			 * Got something that's not a name=value pair.
-			 *
-			 * XXX: attempt to do some backwards compatible parsing here?
 			 */
 			ereport(LOG,
 					(errcode(ERRCODE_CONFIG_FILE_ERROR),

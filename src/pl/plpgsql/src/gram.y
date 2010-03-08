@@ -170,7 +170,6 @@ static	List			*read_raise_options(void);
 %type <datum>	decl_cursor_args
 %type <list>	decl_cursor_arglist
 %type <nsitem>	decl_aliasitem
-%type <str>		decl_stmts decl_stmt
 
 %type <expr>	expr_until_semi expr_until_rightbracket
 %type <expr>	expr_until_then expr_until_loop opt_expr_until_when
@@ -386,10 +385,7 @@ decl_sect		: opt_block_label
 				| opt_block_label decl_start decl_stmts
 					{
 						plpgsql_IdentifierLookup = IDENTIFIER_LOOKUP_NORMAL;
-						if ($3 != NULL)
-							$$.label = $3;
-						else
-							$$.label = $1;
+						$$.label	  = $1;
 						/* Remember variables declared in decl_stmts */
 						$$.n_initvars = plpgsql_add_initdatums(&($$.initvarnos));
 					}
@@ -408,17 +404,25 @@ decl_start		: K_DECLARE
 				;
 
 decl_stmts		: decl_stmts decl_stmt
-					{	$$ = $2;	}
 				| decl_stmt
-					{	$$ = $1;	}
 				;
 
-decl_stmt		: LESS_LESS any_identifier GREATER_GREATER
-					{	$$ = $2;	}
+decl_stmt		: decl_statement
 				| K_DECLARE
-					{	$$ = NULL;	}
-				| decl_statement
-					{	$$ = NULL;	}
+					{
+						/* We allow useless extra DECLAREs */
+					}
+				| LESS_LESS any_identifier GREATER_GREATER
+					{
+						/*
+						 * Throw a helpful error if user tries to put block
+						 * label just before BEGIN, instead of before DECLARE.
+						 */
+						ereport(ERROR,
+								(errcode(ERRCODE_SYNTAX_ERROR),
+								 errmsg("block label must be placed before DECLARE, not after"),
+								 parser_errposition(@1)));
+					}
 				;
 
 decl_statement	: decl_varname decl_const decl_datatype decl_notnull decl_defval
@@ -2881,6 +2885,13 @@ read_into_target(PLpgSQL_rec **rec, PLpgSQL_row **row, bool *strict)
 		tok = yylex();
 	}
 
+	/*
+	 * Currently, a row or record variable can be the single INTO target,
+	 * but not a member of a multi-target list.  So we throw error if there
+	 * is a comma after it, because that probably means the user tried to
+	 * write a multi-target list.  If this ever gets generalized, we should
+	 * probably refactor read_into_scalar_list so it handles all cases.
+	 */
 	switch (tok)
 	{
 		case T_DATUM:
@@ -2888,11 +2899,25 @@ read_into_target(PLpgSQL_rec **rec, PLpgSQL_row **row, bool *strict)
 			{
 				check_assignable(yylval.wdatum.datum, yylloc);
 				*row = (PLpgSQL_row *) yylval.wdatum.datum;
+
+				if ((tok = yylex()) == ',')
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("record or row variable cannot be part of multiple-item INTO list"),
+							 parser_errposition(yylloc)));
+				plpgsql_push_back_token(tok);
 			}
 			else if (yylval.wdatum.datum->dtype == PLPGSQL_DTYPE_REC)
 			{
 				check_assignable(yylval.wdatum.datum, yylloc);
 				*rec = (PLpgSQL_rec *) yylval.wdatum.datum;
+
+				if ((tok = yylex()) == ',')
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("record or row variable cannot be part of multiple-item INTO list"),
+							 parser_errposition(yylloc)));
+				plpgsql_push_back_token(tok);
 			}
 			else
 			{
