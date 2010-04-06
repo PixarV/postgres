@@ -682,9 +682,17 @@ static const struct
 		"Australia/Canberra"
 	},							/* (GMT+10:00) Canberra, Melbourne, Sydney */
 	{
+		"Azerbaijan Standard Time", "Azerbaijan Daylight Time",
+		"Asia/Baku"
+	},							/* (GMT+04:00) Baku */
+	{
 		"Azores Standard Time", "Azores Daylight Time",
 		"Atlantic/Azores"
 	},							/* (GMT-01:00) Azores */
+	{
+		"Bangladesh Standard Time", "Bangladesh Daylight Time",
+		"Asia/Dhaka",
+	},							/* (GMT+06:00) Dhaka */
 	{
 		"Canada Central Standard Time", "Canada Central Daylight Time",
 		"Canada/Saskatchewan"
@@ -709,6 +717,10 @@ static const struct
 		"Central Asia Standard Time", "Central Asia Daylight Time",
 		"Asia/Dhaka"
 	},							/* (GMT+06:00) Astana, Dhaka */
+	{
+		"Central Brazilian Standard Time", "Central Brazilian Daylight Time",
+		"America/Cuiaba",
+	},							/* (GMT-04:00) Cuiaba */
 	{
 		"Central Europe Standard Time", "Central Europe Daylight Time",
 		"Europe/Belgrade"
@@ -822,9 +834,17 @@ static const struct
 		"Asia/Amman"
 	},							/* (GMT+02:00) Amman */
 	{
+		"Kamchatka Standard Time", "Kamchatka Daylight Time",
+		"Asia/Kamchatka",
+	},							/* (GMT+12:00) Petropavlovsk-Kamchatsky */
+	{
 		"Korea Standard Time", "Korea Daylight Time",
 		"Asia/Seoul"
 	},							/* (GMT+09:00) Seoul */
+	{
+		"Mauritius Standard Time", "Mauritius Daylight Time",
+		"Indian/Mauritius",
+	},							/* (GMT+04:00) Port Louis */
 	{
 		"Mexico Standard Time", "Mexico Daylight Time",
 		"America/Mexico_City"
@@ -846,6 +866,10 @@ static const struct
 		"Montevideo Standard Time", "Montevideo Daylight Time",
 		"America/Montevideo"
 	},							/* (GMT-03:00) Montevideo */
+	{
+		"Morocco Standard Time", "Morocco Daylight Time",
+		"Africa/Casablanca",
+	},							/* (GMT) Casablanca */
 	{
 		"Mountain Standard Time", "Mountain Daylight Time",
 		"US/Mountain"
@@ -900,6 +924,14 @@ static const struct
 		"Pacific Standard Time (Mexico)", "Pacific Daylight Time (Mexico)",
 		"America/Tijuana"
 	},							/* (GMT-08:00) Tijuana, Baja California */
+	{
+		"Pakistan Standard Time", "Pakistan Daylight Time",
+		"Asia/Karachi",
+	},							/* (GMT+05:00) Islamabad, Karachi */
+	{
+		"Paraguay Standard Time", "Paraguay Daylight Time",
+		"America/Asuncion",
+	},							/* (GMT-04:00) Asuncion */
 	{
 		"Romance Standard Time", "Romance Daylight Time",
 		"Europe/Brussels"
@@ -959,6 +991,10 @@ static const struct
 		"Pacific/Tongatapu"
 	},							/* (GMT+13:00) Nuku'alofa */
 	{
+		"Ulaanbaatar Standard Time", "Ulaanbaatar Daylight Time",
+		"Asia/Ulaanbaatar",
+	},							/* (GMT+08:00) Ulaanbaatar */
+	{
 		"US Eastern Standard Time", "US Eastern Daylight Time",
 		"US/Eastern"
 	},							/* (GMT-05:00) Indiana (East) */
@@ -966,6 +1002,26 @@ static const struct
 		"US Mountain Standard Time", "US Mountain Daylight Time",
 		"US/Arizona"
 	},							/* (GMT-07:00) Arizona */
+	{
+		"Coordinated Universal Time", "Coordinated Universal Time",
+		"UTC"
+	},							/* (GMT) Coordinated Universal Time */
+	{
+		"UTC+12", "UTC+12",
+		"Etc/GMT+12"
+	},							/* (GMT+12:00) Coordinated Universal Time+12 */
+	{
+		"UTC-02", "UTC-02",
+		"Etc/GMT-02"
+	},							/* (GMT-02:00) Coordinated Universal Time-02 */
+	{
+		"UTC-11", "UTC-11",
+		"Etc/GMT-11"
+	},							/* (GMT-11:00) Coordinated Universal Time-11 */bb
+	{
+		"Venezuela Standard Time", "Venezuela Daylight Time",
+		"America/Caracas",
+	},							/* (GMT-04:30) Caracas */
 	{
 		"Vladivostok Standard Time", "Vladivostok Daylight Time",
 		"Asia/Vladivostok"
