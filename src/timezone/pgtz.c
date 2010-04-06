@@ -1092,7 +1092,7 @@ identify_system_timezone(void)
 		{
 			ereport(WARNING,
 					(errmsg_internal("could not query value for 'std' to identify Windows timezone %s: %i",
-									 zonename, (int) r)));
+									 keyname, (int) r)));
 			RegCloseKey(key);
 			break;
 		}
@@ -1109,7 +1109,7 @@ identify_system_timezone(void)
 		{
 			ereport(WARNING,
 					(errmsg_internal("could not query value for 'dlt' to identify Windows timezone %s: %i",
-									 zonename, (int) r)));
+									 keyname, (int) r)));
 			RegCloseKey(key);
 			break;
 		}
