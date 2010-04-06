@@ -1017,7 +1017,7 @@ static const struct
 	{
 		"UTC-11", "UTC-11",
 		"Etc/GMT-11"
-	},							/* (GMT-11:00) Coordinated Universal Time-11 */bb
+	},							/* (GMT-11:00) Coordinated Universal Time-11 */
 	{
 		"Venezuela Standard Time", "Venezuela Daylight Time",
 		"America/Caracas",
