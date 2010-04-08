@@ -4894,6 +4894,100 @@ str_time(pg_time_t tnow)
 }
 
 /*
+ * Parse one line from recovery.conf. 'cmdline' is the raw line from the
+ * file. If the line is parsed successfully, returns true, false indicates
+ * syntax error. On success, *key_p and *value_p are set to the parameter
+ * name and value on the line, respectively. If the line is an empty line,
+ * consisting entirely of whitespace and comments, function returns true
+ * and *keyp_p and *value_p are set to NULL.
+ *
+ * The pointers returned in *key_p and *value_p point to an internal buffer
+ * that is valid only until the next call of parseRecoveryCommandFile().
+ */
+static bool
+parseRecoveryCommandFileLine(char *cmdline, char **key_p, char **value_p)
+{
+	char	   *ptr;
+	char	   *bufp;
+	char	   *key;
+	char	   *value;
+	static char *buf = NULL;
+
+	*key_p = *value_p = NULL;
+
+	/*
+	 * Allocate the buffer on first use. It's used to hold both the
+	 * parameter name and value.
+	 */
+	if (buf == NULL)
+		buf = malloc(MAXPGPATH + 1);
+	bufp = buf;
+
+	/* Skip any whitespace at the beginning of line */
+	for (ptr = cmdline; *ptr; ptr++)
+	{
+		if (!isspace((unsigned char) *ptr))
+			break;
+	}
+	/* Ignore empty lines */
+	if (*ptr == '\0' || *ptr == '#')
+		return true;
+
+	/* Read the parameter name */
+	key = bufp;
+	while (*ptr && !isspace((unsigned char) *ptr) &&
+		   *ptr != '=' && *ptr != '\'')
+		*(bufp++) = *(ptr++);
+	*(bufp++) = '\0';
+
+	/* Skip to the beginning quote of the parameter value */
+	ptr = strchr(ptr, '\'');
+	if (!ptr)
+		return false;
+	ptr++;
+
+	/* Read the parameter value to *bufp. Collapse any '' escapes as we go. */
+	value = bufp;
+	for (;;)
+	{
+		if (*ptr == '\'')
+		{
+			ptr++;
+			if (*ptr == '\'')
+				*(bufp++) = '\'';
+			else
+			{
+				/* end of parameter */
+				*bufp = '\0';
+				break;
+			}
+		}
+		else if (*ptr == '\0')
+			return false;	/* unterminated quoted string */
+		else
+			*(bufp++) = *ptr;
+
+		ptr++;
+	}
+	*(bufp++) = '\0';
+
+	/* Check that there's no garbage after the value */
+	while (*ptr)
+	{
+		if (*ptr == '#')
+			break;
+		if (!isspace((unsigned char) *ptr))
+			return false;
+		ptr++;
+	}
+
+	/* Success! */
+	*key_p = key;
+	*value_p = value;
+	return true;
+}
+
+/*
  * See if there is a recovery command file (recovery.conf), and if so
  * read in parameters for archive recovery and XLOG streaming.
  *
@@ -4926,39 +5020,16 @@ readRecoveryCommandFile(void)
 	 */
 	while (fgets(cmdline, sizeof(cmdline), fd) != NULL)
 	{
-		/* skip leading whitespace and check for # comment */
-		char	   *ptr;
 		char	   *tok1;
 		char	   *tok2;
 
-		for (ptr = cmdline; *ptr; ptr++)
+		if (!parseRecoveryCommandFileLine(cmdline, &tok1, &tok2))
 		{
-			if (!isspace((unsigned char) *ptr))
-				break;
+			syntaxError = true;
+			break;
 		}
-		if (*ptr == '\0' || *ptr == '#')
+		if (tok1 == NULL)
 			continue;
-
-		/* identify the quoted parameter value */
-		tok1 = strtok(ptr, "'");
-		if (!tok1)
-		{
-			syntaxError = true;
-			break;
-		}
-		tok2 = strtok(NULL, "'");
-		if (!tok2)
-		{
-			syntaxError = true;
-			break;
-		}
-		/* reparse to get just the parameter name */
-		tok1 = strtok(ptr, " \t=");
-		if (!tok1)
-		{
-			syntaxError = true;
-			break;
-		}
 
 		if (strcmp(tok1, "restore_command") == 0)
 		{
@@ -5092,15 +5163,16 @@ readRecoveryCommandFile(void)
 	if (StandbyMode)
 	{
 		if (PrimaryConnInfo == NULL && recoveryRestoreCommand == NULL)
-			ereport(FATAL,
+			ereport(WARNING,
 					(errmsg("recovery command file \"%s\" specified neither primary_conninfo nor restore_command",
-							RECOVERY_COMMAND_FILE)));
+							RECOVERY_COMMAND_FILE),
+					 errhint("The database server will regularly poll the pg_xlog subdirectory to check for files placed there.")));
 	}
 	else
 	{
 		if (recoveryRestoreCommand == NULL)
 			ereport(FATAL,
-					(errmsg("recovery command file \"%s\" did not specify restore_command nor standby_mode",
+					(errmsg("recovery command file \"%s\" must specify restore_command when standby mode is not enabled",
 							RECOVERY_COMMAND_FILE)));
 	}
 
@@ -8409,6 +8481,12 @@ pg_xlogfile_name_offset(PG_FUNCTION_ARGS)
 	HeapTuple	resultHeapTuple;
 	Datum		result;
 
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is in progress"),
+				 errhint("pg_xlogfile_name_offset() cannot be executed during recovery.")));
+
 	/*
 	 * Read input and parse
 	 */
@@ -8477,6 +8555,12 @@ pg_xlogfile_name(PG_FUNCTION_ARGS)
 	uint32		xlogseg;
 	XLogRecPtr	locationpoint;
 	char		xlogfilename[MAXFNAMELEN];
+
+	if (RecoveryInProgress())
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("recovery is in progress"),
+				 errhint("pg_xlogfile_name() cannot be executed during recovery.")));
 
 	locationstr = text_to_cstring(location);
 
