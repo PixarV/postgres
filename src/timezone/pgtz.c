@@ -1035,10 +1035,10 @@ static const struct
 		"Australia/Perth"
 	},							/* (GMT+08:00) Perth */
 #ifdef NOT_USED
-	/* Could not find a match for this one. Excluded for now. */
+	/* Could not find a match for this one (just a guess). Excluded for now. */
 	{
 		"W. Central Africa Standard Time", "W. Central Africa Daylight Time",
-		""
+		"WAT"
 	},							/* (GMT+01:00) West Central Africa */
 #endif
 	{
