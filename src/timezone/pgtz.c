@@ -666,6 +666,10 @@ static const struct
 		"Asia/Baghdad"
 	},							/* (GMT+03:00) Baghdad */
 	{
+		"Argentina Standard Time", "Argentina Daylight Time",
+		"America/Buenos_Aires"
+	},							/* (GMT-03:00) Buenos Aires */
+	{
 		"Armenian Standard Time", "Armenian Daylight Time",
 		"Asia/Yerevan"
 	},							/* (GMT+04:00) Yerevan */
