@@ -5450,7 +5450,7 @@ recoveryStopsHere(XLogRecord *record, bool *includeThis)
 			CheckPoint	checkPoint;
 
 			memcpy(&checkPoint, XLogRecGetData(record), sizeof(CheckPoint));
-			recoveryLastXTime = checkPoint.time;
+			recoveryLastXTime = time_t_to_timestamptz(checkPoint.time);
 		}
 
 		/*
@@ -6009,6 +6009,7 @@ StartupXLOG(void)
 				running.oldestRunningXid = oldestActiveXID;
 				latestCompletedXid = checkPoint.nextXid;
 				TransactionIdRetreat(latestCompletedXid);
+				Assert(TransactionIdIsNormal(latestCompletedXid));
 				running.latestCompletedXid = latestCompletedXid;
 				running.xids = xids;
 
@@ -6513,7 +6514,7 @@ CheckRecoveryConsistency(void)
 		IsUnderPostmaster)
 	{
 		backendsAllowed = true;
-		SendPostmasterSignal(PMSIGNAL_RECOVERY_CONSISTENT);
+		SendPostmasterSignal(PMSIGNAL_BEGIN_HOT_STANDBY);
 	}
 }
 
@@ -7825,6 +7826,7 @@ xlog_redo(XLogRecPtr lsn, XLogRecord *record)
 			running.oldestRunningXid = oldestActiveXID;
 			latestCompletedXid = checkPoint.nextXid;
 			TransactionIdRetreat(latestCompletedXid);
+			Assert(TransactionIdIsNormal(latestCompletedXid));
 			running.latestCompletedXid = latestCompletedXid;
 			running.xids = xids;
 

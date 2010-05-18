@@ -9,10 +9,6 @@
 #include <ctype.h>
 #include <stdlib.h>
 
-#ifdef EDB_NATIVE_LANG
-#include "access/tuptoaster.h"
-#endif
-
 
 /*
  * get_control_data()
@@ -66,10 +62,10 @@ get_control_data(migratorContext *ctx, ClusterInfo *cluster, bool live_check)
 #else
 	SetEnvironmentVariableA("LANG", "C");
 #endif
-	sprintf(cmd, SYSTEMQUOTE "\"%s/%s \"%s\"" SYSTEMQUOTE,
-			cluster->bindir,
-			live_check ? "pg_controldata\"" : "pg_resetxlog\" -n",
-			cluster->pgdata);
+	snprintf(cmd, sizeof(cmd), SYSTEMQUOTE "\"%s/%s \"%s\"" SYSTEMQUOTE,
+			 cluster->bindir,
+			 live_check ? "pg_controldata\"" : "pg_resetxlog\" -n",
+			 cluster->pgdata);
 	fflush(stdout);
 	fflush(stderr);
 
@@ -88,20 +84,11 @@ get_control_data(migratorContext *ctx, ClusterInfo *cluster, bool live_check)
 		got_float8_pass_by_value = true;
 	}
 
-#ifdef EDB_NATIVE_LANG
-	/* EDB AS 8.3 is an 8.2 code base */
-	if (cluster->is_edb_as && GET_MAJOR_VERSION(cluster->major_version) <= 803)
-	{
-		cluster->controldata.toast = TOAST_MAX_CHUNK_SIZE;
-		got_toast = true;
-	}
-#endif
-
 	/* we have the result of cmd in "output". so parse it line by line now */
 	while (fgets(bufin, sizeof(bufin), output))
 	{
 		if (ctx->debug)
-			fprintf(ctx->debug_fd, bufin);
+			fputs(bufin, ctx->debug_fd);
 
 #ifdef WIN32
 		/*
@@ -140,9 +127,7 @@ get_control_data(migratorContext *ctx, ClusterInfo *cluster, bool live_check)
 			p++;				/* removing ':' char */
 			cluster->controldata.cat_ver = (uint32) atol(p);
 		}
-		else if ((p = strstr(bufin, "First log file ID after reset:")) != NULL ||
-				 (cluster->is_edb_as && GET_MAJOR_VERSION(cluster->major_version) <= 803 &&
-				  (p = strstr(bufin, "Current log file ID:")) != NULL))
+		else if ((p = strstr(bufin, "First log file ID after reset:")) != NULL)
 		{
 			p = strchr(p, ':');
 
@@ -153,9 +138,7 @@ get_control_data(migratorContext *ctx, ClusterInfo *cluster, bool live_check)
 			cluster->controldata.logid = (uint32) atol(p);
 			got_log_id = true;
 		}
-		else if ((p = strstr(bufin, "First log file segment after reset:")) != NULL ||
-				 (cluster->is_edb_as && GET_MAJOR_VERSION(cluster->major_version) <= 803 &&
-				  (p = strstr(bufin, "Next log file segment:")) != NULL))
+		else if ((p = strstr(bufin, "First log file segment after reset:")) != NULL)
 		{
 			p = strchr(p, ':');
 

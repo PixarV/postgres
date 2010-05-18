@@ -291,8 +291,6 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			  RelInfoArr *relarr, Cluster whichCluster)
 {
 	PGconn	   *conn = connectToServer(ctx, dbinfo->db_name, whichCluster);
-	bool		is_edb_as = (whichCluster == CLUSTER_OLD) ?
-					ctx->old.is_edb_as : ctx->new.is_edb_as;
 	PGresult   *res;
 	RelInfo    *relinfos;
 	int			ntups;
@@ -333,46 +331,15 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 			 "		 relname = 'pg_largeobject_loid_pn_index') )) "
 			 "	AND "
 			 "	(relkind = 'r' OR relkind = 't' OR "
-			 "	 relkind = 'i'%s)%s"
+			 "	 relkind = 'i'%s)"
 			 "GROUP BY  c.oid, n.nspname, c.relname, c.relfilenode,"
 			 "			c.reltoastrelid, t.spclocation, "
 			 "			n.nspname "
 			 "ORDER BY n.nspname, c.relname;",
 			 FirstNormalObjectId,
-	/* see the comment at the top of v8_3_create_sequence_script() */
+	/* see the comment at the top of old_8_3_create_sequence_script() */
 			 (GET_MAJOR_VERSION(ctx->old.major_version) <= 803) ?
-			 "" : " OR relkind = 'S'",
-
-	/*
-	 * EDB AS installs pgagent by default via initdb. We have to ignore it,
-	 * and not migrate any old table contents.
-	 */
-			 (is_edb_as && strcmp(dbinfo->db_name, "edb") == 0) ?
-			 " 	AND "
-			 "	n.nspname != 'pgagent' AND "
-	/* skip pgagent TOAST tables */
-			 "	c.oid NOT IN "
-			 "	( "
-			 "		SELECT c2.reltoastrelid "
-			 "		FROM pg_catalog.pg_class c2 JOIN "
-			 "				pg_catalog.pg_namespace n2 "
-			 "			ON c2.relnamespace = n2.oid "
-			 "		WHERE n2.nspname = 'pgagent' AND "
-			 "			  c2.reltoastrelid != 0 "
-			 "	) AND "
-	/* skip pgagent TOAST table indexes */
-			 "	c.oid NOT IN "
-			 "	( "
-			 "		SELECT c3.reltoastidxid "
-			 "		FROM pg_catalog.pg_class c2 JOIN "
-			 "				pg_catalog.pg_namespace n2 "
-			 "			ON c2.relnamespace = n2.oid JOIN "
-			 "				pg_catalog.pg_class c3 "
-			 "			ON c2.reltoastrelid = c3.oid "
-			 "		WHERE n2.nspname = 'pgagent' AND "
-			 "			  c2.reltoastrelid != 0 AND "
-			 "			  c3.reltoastidxid != 0 "
-			 "	) " : "");
+			 "" : " OR relkind = 'S'");
 
 	res = executeQueryOrDie(ctx, conn, query);
 
@@ -395,10 +362,10 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 		curr->reloid = atol(PQgetvalue(res, relnum, i_oid));
 
 		nspname = PQgetvalue(res, relnum, i_nspname);
-		snprintf(curr->nspname, sizeof(curr->nspname), nspname);
+		strlcpy(curr->nspname, nspname, sizeof(curr->nspname));
 
 		relname = PQgetvalue(res, relnum, i_relname);
-		snprintf(curr->relname, sizeof(curr->relname), relname);
+		strlcpy(curr->relname, relname, sizeof(curr->relname));
 
 		curr->relfilenode = atol(PQgetvalue(res, relnum, i_relfilenode));
 		curr->toastrelid = atol(PQgetvalue(res, relnum, i_reltoastrelid));
@@ -407,7 +374,7 @@ get_rel_infos(migratorContext *ctx, const DbInfo *dbinfo,
 		/* if no table tablespace, use the database tablespace */
 		if (strlen(tblspace) == 0)
 			tblspace = dbinfo->db_tblspace;
-		snprintf(curr->tablespace, sizeof(curr->tablespace), "%s", tblspace);
+		strlcpy(curr->tablespace, tblspace, sizeof(curr->tablespace));
 	}
 	PQclear(res);
 
