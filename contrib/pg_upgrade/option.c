@@ -48,7 +48,8 @@ parseCommandLine(migratorContext *ctx, int argc, char *argv[])
 	};
 	char		option;			/* Command line option */
 	int			optindex = 0;	/* used by getopt_long */
-
+	int			user_id;
+	
 	if (getenv("PGUSER"))
 	{
 		pg_free(ctx->user);
@@ -62,6 +63,9 @@ parseCommandLine(migratorContext *ctx, int argc, char *argv[])
 
 	ctx->transfer_mode = TRANSFER_MODE_COPY;
 
+	/* user lookup and 'root' test must be split because of usage() */
+	user_id = get_user_info(ctx, &ctx->user);
+	
 	if (argc > 1)
 	{
 		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0 ||
@@ -77,7 +81,7 @@ parseCommandLine(migratorContext *ctx, int argc, char *argv[])
 		}
 	}
 
-	if ((get_user_info(ctx, &ctx->user)) == 0)
+	if (user_id == 0)
 		pg_log(ctx, PG_FATAL, "%s: cannot be run as root\n", ctx->progname);
 
 #ifndef WIN32
@@ -222,22 +226,21 @@ usage(migratorContext *ctx)
 	printf(_("\nUsage: pg_upgrade [OPTIONS]...\n\
 \n\
 Options:\n\
- -d, --old-datadir=OLDDATADIR    old cluster data directory\n\
- -D, --new-datadir=NEWDATADIR    new cluster data directory\n\
- -b, --old-bindir=OLDBINDIR      old cluster executable directory\n\
- -B, --new-bindir=NEWBINDIR      new cluster executable directory\n\
- -p, --old-port=portnum          old cluster port number (default %d)\n\
- -P, --new-port=portnum          new cluster port number (default %d)\n\
- \n\
- -u, --user=username             clusters superuser (default \"%s\")\n\
- -c, --check                     check clusters only, don't change any data\n\
- -g, --debug                     enable debugging\n\
- -G, --debugfile=DEBUGFILENAME   output debugging activity to file\n\
- -k, --link                      link instead of copying files to new cluster\n\
- -l, --logfile=LOGFILENAME       log session activity to file\n\
- -v, --verbose                   enable verbose output\n\
- -V, --version                   display version information, then exit\n\
- -h, --help                      show this help, then exit\n\
+ -b, --old-bindir=old_bindir      old cluster executable directory\n\
+ -B, --new-bindir=new_bindir      new cluster executable directory\n\
+ -c, --check                      check clusters only, don't change any data\n\
+ -d, --old-datadir=old_datadir    old cluster data directory\n\
+ -D, --new-datadir=new_datadir    new cluster data directory\n\
+ -g, --debug                      enable debugging\n\
+ -G, --debugfile=debug_filename   output debugging activity to file\n\
+ -k, --link                       link instead of copying files to new cluster\n\
+ -l, --logfile=log_filename       log session activity to file\n\
+ -p, --old-port=old_portnum       old cluster port number (default %d)\n\
+ -P, --new-port=new_portnum       new cluster port number (default %d)\n\
+ -u, --user=username              clusters superuser (default \"%s\")\n\
+ -v, --verbose                    enable verbose output\n\
+ -V, --version                    display version information, then exit\n\
+ -h, --help                       show this help, then exit\n\
 \n\
 Before running pg_upgrade you must:\n\
   create a new database cluster (using the new version of initdb)\n\

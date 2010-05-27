@@ -5,6 +5,7 @@
 #include "postgres_fe.h"
 
 #include "extern.h"
+#include "ecpg_config.h"
 #include <unistd.h>
 
 /* Location tracking support --- simpler than bison's default */
