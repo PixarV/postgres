@@ -659,9 +659,15 @@ allow_immediate_pgstat_restart(void)
  * pgstat_report_stat() -
  *
  *	Called from tcop/postgres.c to send the so far collected per-table
- *	and function usage statistics to the collector.  Note that this is
- *	called only when not within a transaction, so it is fair to use
- *	transaction stop time as an approximation of current time.
+ *	and function usage statistics to the collector.
+ *	Also called from the pg_stat_report_stat() SQL function, to manually
+ *	send and reset the statistics.
+ *
+ *	Note that tcop/postgres.c calls this only when not within a
+ *	transaction, so it is fair to use transaction stop time as an
+ *	approximation of current time.
+ *	When called from pg_stat_report_stat() it's called within a transaction,
+ *	but force is always set so the timestamp is not used.
  * ----------
  */
 void
