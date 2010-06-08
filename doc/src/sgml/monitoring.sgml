@@ -300,6 +300,24 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </row>
 
      <row>
+      <entry><structname>pg_stat_transaction_all_tables</></entry>
+      <entry>Same as <structname>pg_stat_all_tables</>, except that only
+      changes during the current transactions are included.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_transaction_sys_tables</></entry>
+      <entry>Same as <structname>pg_stat_transaction_all_tables</>, except that only
+      system tables are shown.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_transaction_user_tables</></entry>
+      <entry>Same as <structname>pg_stat_transaction_all_tables</>, except that only user
+      tables are shown.</entry>
+     </row>
+
+     <row>
       <entry><structname>pg_stat_all_indexes</></entry>
       <entry>For each index in the current database,
       the table and index OID, schema, table and index name,
