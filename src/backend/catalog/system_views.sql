@@ -208,7 +208,7 @@ CREATE VIEW pg_stat_all_tables AS
     WHERE C.relkind IN ('r', 't')
     GROUP BY C.oid, N.nspname, C.relname;
 
-CREATE VIEW pg_stat_transaction_user_tables AS
+CREATE VIEW pg_stat_transaction_all_tables AS
     SELECT
             C.oid AS relid,
             N.nspname AS schemaname,
@@ -227,9 +227,18 @@ CREATE VIEW pg_stat_transaction_user_tables AS
     FROM pg_class C LEFT JOIN
          pg_index I ON C.oid = I.indrelid
          LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
-    WHERE C.relkind IN ('r', 't') AND N.nspname NOT IN ('pg_catalog', 'information_schema') AND
-          N.nspname !~ '^pg_toast'
+    WHERE C.relkind IN ('r', 't')
     GROUP BY C.oid, N.nspname, C.relname;
+
+CREATE VIEW pg_stat_transaction_sys_tables AS
+    SELECT * FROM pg_stat_transaction_all_tables
+    WHERE schemaname IN ('pg_catalog', 'information_schema') OR
+          schemaname ~ '^pg_toast';
+
+CREATE VIEW pg_stat_transaction_user_tables AS
+    SELECT * FROM pg_stat_transaction_all_tables
+    WHERE schemaname NOT IN ('pg_catalog', 'information_schema') AND
+          schemaname !~ '^pg_toast';
 
 CREATE VIEW pg_stat_sys_tables AS 
     SELECT * FROM pg_stat_all_tables 
