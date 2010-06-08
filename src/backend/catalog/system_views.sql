@@ -208,7 +208,7 @@ CREATE VIEW pg_stat_all_tables AS
     WHERE C.relkind IN ('r', 't')
     GROUP BY C.oid, N.nspname, C.relname;
 
-CREATE VIEW pg_stat_transaction_tables AS
+CREATE VIEW pg_stat_transaction_user_tables AS
     SELECT
             C.oid AS relid,
             N.nspname AS schemaname,
@@ -398,7 +398,7 @@ CREATE VIEW pg_stat_user_functions AS
     WHERE P.prolang != 12  -- fast check to eliminate built-in functions   
           AND pg_stat_get_function_calls(P.oid) IS NOT NULL;
 
-CREATE VIEW pg_stat_transaction_functions AS
+CREATE VIEW pg_stat_transaction_user_functions AS
     SELECT
             P.oid AS funcid,
             N.nspname AS schemaname,
