@@ -82,6 +82,24 @@ extern Datum pg_stat_reset_shared(PG_FUNCTION_ARGS);
 extern Datum pg_stat_reset_single_table_counters(PG_FUNCTION_ARGS);
 extern Datum pg_stat_reset_single_function_counters(PG_FUNCTION_ARGS);
 
+extern Datum pg_stat_report_stat(PG_FUNCTION_ARGS);
+
+extern Datum pg_stat_get_transaction_numscans(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_returned(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_fetched(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_inserted(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_updated(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_deleted(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_tuples_hot_updated(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_live_tuples(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_dead_tuples(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_blocks_fetched(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_blocks_hit(PG_FUNCTION_ARGS);
+
+extern Datum pg_stat_get_transaction_function_calls(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_function_time(PG_FUNCTION_ARGS);
+extern Datum pg_stat_get_transaction_function_self_time(PG_FUNCTION_ARGS);
+
 /* Global bgwriter statistics, from bgwriter.c */
 extern PgStat_MsgBgWriter bgwriterStats;
 
@@ -1142,4 +1160,221 @@ pg_stat_reset_single_function_counters(PG_FUNCTION_ARGS)
 	pgstat_reset_single_counter(funcoid, RESET_FUNCTION);
 
 	PG_RETURN_VOID();
+}
+
+/* Report so far collected per-table and function usage statistics to the collector */
+Datum
+pg_stat_report_stat(PG_FUNCTION_ARGS)
+{
+	pgstat_report_stat(true);
+
+	PG_RETURN_VOID();
+}
+
+
+Datum
+pg_stat_get_transaction_numscans(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_numscans);
+
+	PG_RETURN_INT64(result);
+}
+
+Datum
+pg_stat_get_transaction_tuples_returned(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_returned);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_tuples_fetched(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_fetched);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_tuples_inserted(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_inserted);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_tuples_updated(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_updated);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_tuples_deleted(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_deleted);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_tuples_hot_updated(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_tuples_hot_updated);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_live_tuples(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_delta_live_tuples);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_dead_tuples(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_delta_dead_tuples);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_blocks_fetched(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_blocks_fetched);
+
+	PG_RETURN_INT64(result);
+}
+
+
+Datum
+pg_stat_get_transaction_blocks_hit(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	int64		result;
+	PgStat_TableStatus *tabentry;
+
+	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
+		result = 0;
+	else
+		result = (int64) (tabentry->t_counts.t_blocks_hit);
+
+	PG_RETURN_INT64(result);
+}
+
+Datum
+pg_stat_get_transaction_function_calls(PG_FUNCTION_ARGS)
+{
+	Oid			funcid = PG_GETARG_OID(0);
+	PgStat_BackendFunctionEntry *funcentry;
+
+	if ((funcentry = get_funcstat_entry(funcid)) == NULL)
+		PG_RETURN_NULL();
+	PG_RETURN_INT64(funcentry->f_counts.f_numcalls);
+}
+
+Datum
+pg_stat_get_transaction_function_time(PG_FUNCTION_ARGS)
+{
+	Oid			funcid = PG_GETARG_OID(0);
+	PgStat_BackendFunctionEntry *funcentry;
+
+	if ((funcentry = get_funcstat_entry(funcid)) == NULL)
+		PG_RETURN_NULL();
+	PG_RETURN_INT64(INSTR_TIME_GET_MICROSEC(funcentry->f_counts.f_time));
+}
+
+Datum
+pg_stat_get_transaction_function_self_time(PG_FUNCTION_ARGS)
+{
+	Oid			funcid = PG_GETARG_OID(0);
+	PgStat_BackendFunctionEntry *funcentry;
+
+	if ((funcentry = get_funcstat_entry(funcid)) == NULL)
+		PG_RETURN_NULL();
+	PG_RETURN_INT64(INSTR_TIME_GET_MICROSEC(funcentry->f_counts.f_time_self));
 }

@@ -3091,6 +3091,35 @@ DESCR("statistics: execution time of function");
 DATA(insert OID = 2980 (  pg_stat_get_function_self_time	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_function_self_time _null_ _null_ _null_ ));
 DESCR("statistics: self execution time of function");
 
+DATA(insert OID = 3037 (  pg_stat_get_transaction_numscans			PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_numscans _null_ _null_ _null_ ));
+DESCR("statistics: number of scans done for table/index in current transaction");
+DATA(insert OID = 3038 (  pg_stat_get_transaction_tuples_returned	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_returned _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples read by seqscan in current transaction");
+DATA(insert OID = 3039 (  pg_stat_get_transaction_tuples_fetched	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_fetched _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples fetched by idxscan in current transaction");
+DATA(insert OID = 3040 (  pg_stat_get_transaction_tuples_inserted	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_inserted _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples inserted in current transaction");
+DATA(insert OID = 3041 (  pg_stat_get_transaction_tuples_updated	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_updated _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples updated in current transaction");
+DATA(insert OID = 3042 (  pg_stat_get_transaction_tuples_deleted	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_deleted _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples deleted in current transaction");
+DATA(insert OID = 3043 (  pg_stat_get_transaction_tuples_hot_updated PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_tuples_hot_updated _null_ _null_ _null_ ));
+DESCR("statistics: number of tuples hot updated in current transaction");
+DATA(insert OID = 3044 (  pg_stat_get_transaction_live_tuples	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_live_tuples _null_ _null_ _null_ ));
+DESCR("statistics: number of live tuples in current transaction");
+DATA(insert OID = 3045 (  pg_stat_get_transaction_dead_tuples	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_dead_tuples _null_ _null_ _null_ ));
+DESCR("statistics: number of dead tuples in current transaction");
+DATA(insert OID = 3046 (  pg_stat_get_transaction_blocks_fetched	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_blocks_fetched _null_ _null_ _null_ ));
+DESCR("statistics: number of blocks fetched in current transaction");
+DATA(insert OID = 3047 (  pg_stat_get_transaction_blocks_hit		PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_blocks_hit _null_ _null_ _null_ ));
+DESCR("statistics: number of blocks found in cache in current transaction");
+DATA(insert OID = 3048 (  pg_stat_get_transaction_function_calls		PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_function_calls _null_ _null_ _null_ ));
+DESCR("statistics: number of function calls");
+DATA(insert OID = 3049 (  pg_stat_get_transaction_function_time			PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_function_time _null_ _null_ _null_ ));
+DESCR("statistics: execution time of function");
+DATA(insert OID = 3050 (  pg_stat_get_transaction_function_self_time	PGNSP PGUID 12 1 0 0 f f f t f s 1 0 20 "26" _null_ _null_ _null_ _null_ pg_stat_get_transaction_function_self_time _null_ _null_ _null_ ));
+DESCR("statistics: self execution time of function");
+
 DATA(insert OID = 2230 (  pg_stat_clear_snapshot		PGNSP PGUID 12 1 0 0 f f f f f v 0 0 2278 "" _null_ _null_ _null_ _null_	pg_stat_clear_snapshot _null_ _null_ _null_ ));
 DESCR("statistics: discard current transaction's statistics snapshot");
 DATA(insert OID = 2274 (  pg_stat_reset					PGNSP PGUID 12 1 0 0 f f f f f v 0 0 2278 "" _null_ _null_ _null_ _null_	pg_stat_reset _null_ _null_ _null_ ));
@@ -3101,6 +3130,8 @@ DATA(insert OID = 3776 (  pg_stat_reset_single_table_counters	PGNSP PGUID 12 1 0
 DESCR("statistics: reset collected statistics for a single table or index in the current database");
 DATA(insert OID = 3777 (  pg_stat_reset_single_function_counters	PGNSP PGUID 12 1 0 0 f f f f f v 1 0 2278 "26" _null_ _null_ _null_ _null_	pg_stat_reset_single_function_counters _null_ _null_ _null_ ));
 DESCR("statistics: reset collected statistics for a single function in the current database");
+DATA(insert OID = 3051 (  pg_stat_report_stat					PGNSP PGUID 12 1 0 0 f f f f f v 0 0 2278 "" _null_ _null_ _null_ _null_	pg_stat_report_stat _null_ _null_ _null_ ));
+DESCR("statistics: report and reset so far collected statistics for current transaction");
 
 DATA(insert OID = 1946 (  encode						PGNSP PGUID 12 1 0 0 f f f t f i 2 0 25 "17 25" _null_ _null_ _null_ _null_ binary_encode _null_ _null_ _null_ ));
 DESCR("convert bytea value into some ascii-only text string");

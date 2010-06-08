@@ -694,6 +694,9 @@ extern const char *pgstat_get_backend_current_activity(int pid, bool checkUser);
 
 extern void pgstat_initstats(Relation rel);
 
+extern PgStat_TableStatus *get_tabstat_entry(Oid rel_id, bool isshared);
+extern PgStat_BackendFunctionEntry *get_funcstat_entry(Oid func_id);
+
 /* nontransactional event counts are simple enough to inline */
 
 #define pgstat_count_heap_scan(rel)									\

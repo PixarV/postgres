@@ -258,8 +258,6 @@ static void pgstat_send_tabstat(PgStat_MsgTabstat *tsmsg);
 static void pgstat_send_funcstats(void);
 static HTAB *pgstat_collect_oids(Oid catalogid);
 
-static PgStat_TableStatus *get_tabstat_entry(Oid rel_id, bool isshared);
-
 static void pgstat_setup_memcxt(void);
 
 static void pgstat_setheader(PgStat_MsgHdr *hdr, StatMsgType mtype);
@@ -1506,7 +1504,7 @@ pgstat_initstats(Relation rel)
 /*
  * get_tabstat_entry - find or create a PgStat_TableStatus entry for rel
  */
-static PgStat_TableStatus *
+PgStat_TableStatus *
 get_tabstat_entry(Oid rel_id, bool isshared)
 {
 	PgStat_TableStatus *entry;
@@ -1559,6 +1557,29 @@ get_tabstat_entry(Oid rel_id, bool isshared)
 	entry->t_shared = isshared;
 	return entry;
 }
+
+/*
+ * get_funcstat_entry - find or create a PgStat_BackendFunctionEntry entry for rel
+ */
+PgStat_BackendFunctionEntry *
+get_funcstat_entry(Oid func_id)
+{
+	PgStat_BackendFunctionEntry *entry;
+	bool found;
+
+	if (pgStatFunctions == NULL)
+		return NULL;
+
+	entry = (PgStat_BackendFunctionEntry *) hash_search(pgStatFunctions,
+												(void *) &func_id,
+												HASH_FIND, &found);
+	if (!found)
+		return NULL;
+
+	return entry;
+}
+
+
 
 /*
  * get_tabstat_stack_level - add a new (sub)transaction stack entry if needed

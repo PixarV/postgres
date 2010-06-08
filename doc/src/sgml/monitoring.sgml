@@ -648,6 +648,98 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
      </row>
 
      <row>
+      <entry><literal><function>pg_stat_get_transaction_numscans</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of sequential scans done when argument is a table,
+       or number of index scans done when argument is an index, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_returned</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of rows read by sequential scans when argument is a table,
+       or number of index entries returned when argument is an index, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_fetched</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of table rows fetched by bitmap scans when argument is a table,
+       or table rows fetched by simple index scans using the index
+       when argument is an index, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_inserted</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of rows inserted into table, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_updated</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of rows updated in table (includes HOT updates), in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_deleted</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of rows deleted from table, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_tuples_hot_updated</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of rows HOT-updated in table, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_live_tuples</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of live rows in table, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_dead_tuples</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of dead rows in table, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_blocks_fetched</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of disk block fetch requests for table or index, in the current transaction
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_blocks_hit</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of disk block requests found in cache for table or index, in the current transaction
+      </entry>
+     </row>
+
+     <row>
       <entry><literal><function>pg_stat_get_last_vacuum_time</function>(<type>oid</type>)</literal></entry>
       <entry><type>timestamptz</type></entry>
       <entry>
@@ -723,6 +815,31 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
       <entry>
        Time spent in only this function. Time spent in called functions
        is excluded.
+      </entry>
+     </row>
+
+      <entry><literal><function>pg_stat_get_transaction_function_calls</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Number of times the function has been called, in the current transaction.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_function_time</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Total wall clock time spent in the function, in microseconds.  Includes
+       the time spent in functions called by this one, in the current transaction.
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_transaction_function_self_time</function>(<type>oid</type>)</literal></entry>
+      <entry><type>bigint</type></entry>
+      <entry>
+       Time spent in only this function. Time spent in called functions
+       is excluded, in the current transaction.
       </entry>
      </row>
 
@@ -944,6 +1061,15 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
       <entry>
        Reset statistics for a single function in the current database to
        zero (requires superuser privileges)
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_report_stat</function>()</literal></entry>
+      <entry><type>void</type></entry>
+      <entry>
+       Report and reset so far collected statistics for the current transaction
+       (requires superuser privileges)
       </entry>
      </row>
     </tbody>
