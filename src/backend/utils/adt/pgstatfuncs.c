@@ -1162,7 +1162,7 @@ pg_stat_reset_single_function_counters(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-/* Report so far collected per-table and function usage statistics to the collector */
+/* Report statistics collected so far to the collector, and reset the statistics. */
 Datum
 pg_stat_report_stat(PG_FUNCTION_ARGS)
 {

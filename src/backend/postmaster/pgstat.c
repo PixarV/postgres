@@ -1559,7 +1559,7 @@ get_tabstat_entry(Oid rel_id, bool isshared)
 }
 
 /*
- * get_funcstat_entry - find or create a PgStat_BackendFunctionEntry entry for rel
+ * get_funcstat_entry - find (but don't create) a PgStat_BackendFunctionEntry entry for a function
  */
 PgStat_BackendFunctionEntry *
 get_funcstat_entry(Oid func_id)
