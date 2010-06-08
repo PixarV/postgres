@@ -818,6 +818,7 @@ postgres: <replaceable>user</> <replaceable>database</> <replaceable>host</> <re
       </entry>
      </row>
 
+     <row>
       <entry><literal><function>pg_stat_get_transaction_function_calls</function>(<type>oid</type>)</literal></entry>
       <entry><type>bigint</type></entry>
       <entry>
