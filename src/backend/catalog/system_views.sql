@@ -208,25 +208,25 @@ CREATE VIEW pg_stat_all_tables AS
     WHERE C.relkind IN ('r', 't')
     GROUP BY C.oid, N.nspname, C.relname;
 
-CREATE VIEW pg_stat_transaction_tables AS 
-    SELECT 
-            C.oid AS relid, 
-            N.nspname AS schemaname, 
-            C.relname AS relname, 
-            pg_stat_get_transaction_numscans(C.oid) AS seq_scan, 
-            pg_stat_get_transaction_tuples_returned(C.oid) AS seq_tup_read, 
-            sum(pg_stat_get_transaction_numscans(I.indexrelid))::bigint AS idx_scan, 
+CREATE VIEW pg_stat_transaction_tables AS
+    SELECT
+            C.oid AS relid,
+            N.nspname AS schemaname,
+            C.relname AS relname,
+            pg_stat_get_transaction_numscans(C.oid) AS seq_scan,
+            pg_stat_get_transaction_tuples_returned(C.oid) AS seq_tup_read,
+            sum(pg_stat_get_transaction_numscans(I.indexrelid))::bigint AS idx_scan,
             sum(pg_stat_get_transaction_tuples_fetched(I.indexrelid))::bigint +
-            pg_stat_get_transaction_tuples_fetched(C.oid) AS idx_tup_fetch, 
-            pg_stat_get_transaction_tuples_inserted(C.oid) AS n_tup_ins, 
-            pg_stat_get_transaction_tuples_updated(C.oid) AS n_tup_upd, 
+            pg_stat_get_transaction_tuples_fetched(C.oid) AS idx_tup_fetch,
+            pg_stat_get_transaction_tuples_inserted(C.oid) AS n_tup_ins,
+            pg_stat_get_transaction_tuples_updated(C.oid) AS n_tup_upd,
             pg_stat_get_transaction_tuples_deleted(C.oid) AS n_tup_del,
             pg_stat_get_transaction_tuples_hot_updated(C.oid) AS n_tup_hot_upd,
-            pg_stat_get_transaction_live_tuples(C.oid) AS n_live_tup, 
+            pg_stat_get_transaction_live_tuples(C.oid) AS n_live_tup,
             pg_stat_get_transaction_dead_tuples(C.oid) AS n_dead_tup
     FROM pg_class C LEFT JOIN
-         pg_index I ON C.oid = I.indrelid 
-         LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace) 
+         pg_index I ON C.oid = I.indrelid
+         LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
     WHERE C.relkind IN ('r', 't') AND N.nspname NOT IN ('pg_catalog', 'information_schema') AND
           N.nspname !~ '^pg_toast'
     GROUP BY C.oid, N.nspname, C.relname;
@@ -398,16 +398,16 @@ CREATE VIEW pg_stat_user_functions AS
     WHERE P.prolang != 12  -- fast check to eliminate built-in functions   
           AND pg_stat_get_function_calls(P.oid) IS NOT NULL;
 
-CREATE VIEW pg_stat_transaction_functions AS 
+CREATE VIEW pg_stat_transaction_functions AS
     SELECT
-            P.oid AS funcid, 
+            P.oid AS funcid,
             N.nspname AS schemaname,
             P.proname AS funcname,
             pg_stat_get_transaction_function_calls(P.oid) AS calls,
             pg_stat_get_transaction_function_time(P.oid) / 1000 AS total_time,
             pg_stat_get_transaction_function_self_time(P.oid) / 1000 AS self_time
     FROM pg_proc P LEFT JOIN pg_namespace N ON (N.oid = P.pronamespace)
-    WHERE P.prolang != 12  -- fast check to eliminate built-in functions   
+    WHERE P.prolang != 12  -- fast check to eliminate built-in functions
           AND pg_stat_get_transaction_function_calls(P.oid) IS NOT NULL;
 
 CREATE VIEW pg_stat_bgwriter AS
