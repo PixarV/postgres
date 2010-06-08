@@ -1223,15 +1223,15 @@ Datum
 pg_stat_get_transaction_tuples_inserted(PG_FUNCTION_ARGS)
 {
 	Oid			relid = PG_GETARG_OID(0);
-	int64		result;
 	PgStat_TableStatus *tabentry;
 
 	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
-		result = 0;
+		PG_RETURN_INT64(0);
 	else
-		result = (int64) (tabentry->t_counts.t_tuples_inserted);
-
-	PG_RETURN_INT64(result);
+		if (tabentry->trans)
+			PG_RETURN_INT64(tabentry->trans->tuples_inserted);
+		else
+			PG_RETURN_INT64(0);
 }
 
 
@@ -1239,15 +1239,15 @@ Datum
 pg_stat_get_transaction_tuples_updated(PG_FUNCTION_ARGS)
 {
 	Oid			relid = PG_GETARG_OID(0);
-	int64		result;
 	PgStat_TableStatus *tabentry;
 
 	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
-		result = 0;
+		PG_RETURN_INT64(0);
 	else
-		result = (int64) (tabentry->t_counts.t_tuples_updated);
-
-	PG_RETURN_INT64(result);
+		if (tabentry->trans)
+			PG_RETURN_INT64(tabentry->trans->tuples_updated);
+		else
+			PG_RETURN_INT64(tabentry->t_counts.t_tuples_updated);
 }
 
 
@@ -1255,15 +1255,15 @@ Datum
 pg_stat_get_transaction_tuples_deleted(PG_FUNCTION_ARGS)
 {
 	Oid			relid = PG_GETARG_OID(0);
-	int64		result;
 	PgStat_TableStatus *tabentry;
 
 	if ((tabentry = get_tabstat_entry(relid,false)) == NULL)
-		result = 0;
+		PG_RETURN_INT64(0);
 	else
-		result = (int64) (tabentry->t_counts.t_tuples_deleted);
-
-	PG_RETURN_INT64(result);
+		if (tabentry->trans)
+			PG_RETURN_INT64(tabentry->trans->tuples_updated);
+		else
+			PG_RETURN_INT64(tabentry->t_counts.t_tuples_deleted);
 }
 
 
